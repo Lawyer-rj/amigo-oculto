@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { db } = require('./db');
 const seg = require('./seguranca');
 const acesso = require('./recuperacao');
+const historico = require('./historico');
 const s = require('./servico');
 const { h, pagina, aviso } = require('./layout');
 const r = express.Router();
@@ -94,7 +95,7 @@ r.get('/c/:token/interacoes', carregar, (req, res) => {
   req.sessao = sessao(req);
   const p = req.part, e = req.edicao;
   const linkVoltar = `<a class="btn sec" href="/c/${h(p.token)}">Meu cadastro e raspadinha</a>`;
-  if (!req.sessao) return res.send(pagina({ titulo: 'A brincadeira continua', selo: e.nome, corpo: `${aviso(req)}<section class="cartao"><h2>Entre como ${h(p.nome)}</h2><p>Confirme sua participação e use seu PIN para conversar e acompanhar as compras. Para crianças, o responsável entra pelo link e PIN da criança.</p><form method="post" action="${base(p)}/entrar"><label for="pin-social">Seu PIN</label><input id="pin-social" type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" required autocomplete="current-password"><button class="btn">Entrar</button></form>${linkVoltar}</section>` }));
+  if (!req.sessao) return res.send(pagina({ titulo: 'A brincadeira continua', selo: e.nome, experiencia: 'social', corpo: `${aviso(req)}<section class="cartao"><h2>Entre como ${h(p.nome)}</h2><p>Confirme sua participação e use seu PIN para conversar e acompanhar as compras. Para crianças, o responsável entra pelo link e PIN da criança.</p><form method="post" action="${base(p)}/entrar"><label for="pin-social">Seu PIN</label><input id="pin-social" type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" required autocomplete="current-password"><button class="btn">Entrar</button></form>${linkVoltar}</section>` }));
   criarAnonimas(p, e);
   const c = req.query.conversa ? conversaPermitida(p, e, req.query.conversa) : null;
   if (req.query.conversa && !c) return res.status(404).send('Conversa não encontrada.');
@@ -104,16 +105,16 @@ r.get('/c/:token/interacoes', carregar, (req, res) => {
   const comprou = listaCompras.find((x) => x.id === p.id)?.comprado;
   const msgs = lerMensagens(p, e, c);
   const corpo = `${aviso(req)}
-  <section class="cartao"><h2>Olá, ${h(p.nome)}!</h2><p>Converse com a família e acompanhe a brincadeira. Mensagens privadas só aparecem para os participantes da conversa.</p><div class="acoes">${linkVoltar}<form method="post" action="${base(p)}/sair">${hidden(req)}<button class="btn sec">Sair deste perfil</button></form></div></section>
-  <section class="cartao"><h2>🎁 Como estão as compras?</h2>${listaCompras.length ? `<p id="compras-resumo">${listaCompras.filter((x) => x.comprado).length} de ${listaCompras.length} já compraram.</p><ul id="compras-lista">${listaCompras.map((x) => `<li>${h(x.nome)}: ${x.comprado ? '✅ Já comprou' : '⏳ Ainda não marcou a compra'}</li>`).join('')}</ul>${listaCompras.some((x) => x.id === p.id) ? `<form method="post" action="${base(p)}/compra">${hidden(req)}<input type="hidden" name="comprado" value="${comprou ? '0' : '1'}"><button class="btn">${comprou ? 'Desmarcar minha compra' : 'Já comprei o presente!'}</button></form>` : ''}<p class="muted pequeno">O grupo vê somente quem comprou. O presente e o destinatário continuam em segredo.</p>` : '<p>O acompanhamento das compras estará disponível depois do sorteio.</p>'}</section>
-  <section class="cartao"><h2>💬 Conversas</h2><nav id="social-conversas" class="social-conversas"><a href="${base(p)}" ${!c ? 'aria-current="page"' : ''}>Mural da família</a>${conversas.map((x) => `<a href="${base(p)}?conversa=${x.id}" ${c?.id === x.id ? 'aria-current="page"' : ''}>${h(tituloConversa(x, p))}</a>`).join('')}</nav>
+  <section class="cartao social-boas-vindas"><span class="etiqueta">Nossa roda, sempre perto</span><h2>Olá, ${h(p.nome)}!</h2><p>Converse com a família e acompanhe a brincadeira. Mensagens privadas só aparecem para os participantes da conversa.</p><div class="acoes">${linkVoltar}<a class="btn sec" href="${base(p)}/historico">Histórico da família</a><form method="post" action="${base(p)}/sair">${hidden(req)}<button class="btn sec">Sair deste perfil</button></form></div></section>
+  <section class="cartao social-compras"><span class="etiqueta">A contagem para a surpresa</span><h2>Como estão as compras?</h2>${listaCompras.length ? `<p id="compras-resumo">${listaCompras.filter((x) => x.comprado).length} de ${listaCompras.length} já compraram.</p><details class="compras-detalhes"><summary>Ver quem já comprou</summary><ul id="compras-lista">${listaCompras.map((x) => `<li>${h(x.nome)}: ${x.comprado ? '✅ Já comprou' : '⏳ Ainda não marcou a compra'}</li>`).join('')}</ul></details>${listaCompras.some((x) => x.id === p.id) ? `<form method="post" action="${base(p)}/compra">${hidden(req)}<input type="hidden" name="comprado" value="${comprou ? '0' : '1'}"><button class="btn">${comprou ? 'Desmarcar minha compra' : 'Já comprei o presente!'}</button></form>` : ''}<p class="muted pequeno">O grupo vê somente quem comprou. O presente e o destinatário continuam em segredo.</p>` : '<p>O acompanhamento das compras estará disponível depois do sorteio.</p>'}</section>
+  <section class="cartao social-chat"><span class="etiqueta">Tem assunto bom por aqui</span><h2>Conversas</h2><nav id="social-conversas" class="social-conversas"><a href="${base(p)}" ${!c ? 'aria-current="page"' : ''}>Mural da família</a>${conversas.map((x) => `<a href="${base(p)}?conversa=${x.id}" ${c?.id === x.id ? 'aria-current="page"' : ''}>${h(tituloConversa(x, p))}</a>`).join('')}</nav>
     <form method="post" action="${base(p)}/privada" class="acoes">${hidden(req)}<label for="pessoa-privada">Conversar com</label><select id="pessoa-privada" name="pessoa" required>${membros.map((x) => `<option value="${x.id}">${h(x.nome)}</option>`).join('')}</select><button class="btn sec" ${membros.length ? '' : 'disabled'}>Abrir conversa privada</button></form>
     <h3>${c ? h(tituloConversa(c, p)) : 'Mural da família'}</h3>${c?.tipo === 'anonima' ? '<p class="aviso info">Use esta conversa para perguntar sobre o presente. Evite assinar a mensagem ou dar pistas sobre sua identidade.</p>' : '<p class="muted pequeno">Aqui seu nome aparece nas mensagens.</p>'}
     <div id="social-mensagens" class="social-mensagens">${msgs.map((m) => `<article class="social-mensagem"><b>${h(m.autor)}</b><time>${h(s.formatar(m.em))}</time><p>${h(m.texto)}</p>${m.minha ? `<form method="post" action="${base(p)}/apagar">${hidden(req)}<input type="hidden" name="mensagem" value="${m.id}"><input type="hidden" name="conversa" value="${c?.id || ''}"><button class="btn sec mini">Apagar minha mensagem</button></form>` : ''}</article>`).join('') || '<p class="muted">Nenhuma mensagem ainda. Comece a conversa!</p>'}</div>
     <form method="post" action="${base(p)}/mensagem">${hidden(req)}<input type="hidden" name="conversa" value="${c?.id || ''}"><label for="texto-social">Sua mensagem</label><textarea id="texto-social" name="texto" maxlength="1000" required rows="3"></textarea><button class="btn">Enviar mensagem</button></form>
     <p id="social-status" class="muted pequeno" role="status">Atualização a cada 10 segundos enquanto esta página estiver aberta. São exibidas as últimas 100 mensagens.</p>
   </section><div id="social-config" data-estado="${base(p)}/estado${c ? `?conversa=${c.id}` : ''}" data-base="${base(p)}" data-conversa="${c?.id || ''}" data-csrf="${req.sessao.csrf}"></div>`;
-  res.send(pagina({ titulo: 'A brincadeira continua', selo: e.nome, corpo, scripts: ['/interacoes.js'] }));
+  res.send(pagina({ titulo: 'A brincadeira continua', selo: e.nome, experiencia: 'social', largo: true, corpo, scripts: ['/interacoes.js'] }));
 });
 
 r.post('/c/:token/interacoes/entrar', carregar, (req, res) => {
@@ -129,7 +130,10 @@ r.post('/c/:token/interacoes/entrar', carregar, (req, res) => {
   res.redirect(303, base(p));
 });
 r.use('/c/:token/interacoes', carregar, autenticar);
-r.post('/c/:token/interacoes/sair', (req, res) => {
+r.get('/c/:token/interacoes/historico', (req, res) => {
+  res.send(pagina({ titulo: 'Histórico da família', selo: req.edicao.nome, corpo: `<a class="btn sec" href="${base(req.part)}">Voltar às conversas</a>${historico.mostrar(req.edicao.grupo_id, req.edicao.ano)}` }));
+});
+r.post('/c/:token/interacoes/sair' , (req, res) => {
   db.prepare('DELETE FROM sessoes_pessoas WHERE chave = ?').run(req.sessao.chave);
   res.setHeader('Set-Cookie', `${cookieNome(req.part)}=; ${cookieOpcoes(req.part)}Max-Age=0`);
   res.redirect(303, base(req.part));

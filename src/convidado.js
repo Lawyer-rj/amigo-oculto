@@ -71,21 +71,25 @@ r.get('/c/:token', carregar, (req, res) => {
   })();
 
   let corpo = aviso(req);
-  if (p.pin_hash && p.status === 'confirmado') corpo += `<section class="cartao"><h2>💬 A brincadeira continua</h2><p>Converse com a família, marque sua compra e tire dúvidas sem estragar a surpresa.</p><a class="btn" href="/c/${h(p.token)}/interacoes">Entrar nas conversas e compras</a></section>`;
+
 
   corpo += `
-  <section class="cartao">
+  <section class="cartao convite-hero">
+    <div class="convite-apresentacao"><span class="etiqueta">${sorteada ? 'A surpresa está pronta' : 'Seu lugar na nossa roda'}</span><h2>${sorteada ? 'Tem uma surpresa<br>esperando por você.' : 'O melhor presente<br>é reunir a família.'}</h2>
     <p class="ola">${responsavel
       ? `Este é o cadastro de <b>${h(p.nome)}</b>, sob responsabilidade de ${h(responsavel.nome)}.`
       : `Olá, <b>${h(primeiroNome)}</b>! Este é o seu link pessoal. Não o compartilhe.`}</p>
     ${e.mensagem ? `<p>${h(e.mensagem)}</p>` : ''}
-    <div class="fatos">
+    ${sorteada && participouDoSorteio ? '<a class="btn convite-principal" href="#raspadinha">Abrir minha raspadinha <span aria-hidden="true">↗</span></a>' : ''}</div><img class="presente-ilustracao" src="/presente.svg" alt="" width="320" height="320"><div class="fatos">
       <div class="fato"><b>Sorteio</b><span>${h(s.formatar(e.sorteio_em))}</span></div>
       <div class="fato"><b>Entrega</b><span>${h(s.formatar(e.entrega_em))}</span></div>
       <div class="fato"><b>Valor do presente</b><span>${h(faixa)}</span></div>
       ${e.entrega_local ? `<div class="fato"><b>Local</b><span>${h(e.entrega_local)}</span></div>` : ''}
     </div>
   </section>`;
+
+  const cartaoSocial = p.pin_hash && p.status === 'confirmado' ? `<section class="cartao convite-social"><div><span class="etiqueta">A festa começa antes</span><h2>A família está por aqui.</h2><p>Converse, tire dúvidas e conte quando comprar seu presente.</p></div><a class="btn" href="/c/${h(p.token)}/interacoes">Entrar nas conversas e compras <span aria-hidden="true">↗</span></a></section>` : '';
+  if (!sorteada) corpo += cartaoSocial;
 
   /* ---------- Depois do sorteio: raspadinha ---------- */
   if (sorteada) {
@@ -119,11 +123,18 @@ r.get('/c/:token', carregar, (req, res) => {
     }
   }
 
+  if (sorteada) corpo += cartaoSocial;
+
   /* ---------- Antes do sorteio: confirmação, dados, sugestões ---------- */
   if (!sorteada) {
+    corpo += `<nav class="etapas" data-abas data-inicial="${p.status === 'confirmado' ? (p.foto ? 'presentes' : 'perfil') : 'participacao'}">
+      <button id="aba-participacao" class="etapa" data-etapa-alvo="participacao" aria-controls="etapa-participacao"><span class="etapa-num">1</span> Confirmar</button>
+      <button id="aba-perfil" class="etapa" data-etapa-alvo="perfil" aria-controls="etapa-perfil"><span class="etapa-num">2</span> Seu perfil</button>
+      <button id="aba-presentes" class="etapa" data-etapa-alvo="presentes" aria-controls="etapa-presentes"><span class="etapa-num">3</span> Presentes</button>
+    </nav>`;
     corpo += `
-    <section class="cartao">
-      <h2>1. Participação</h2>
+    <section class="cartao painel-etapa" id="etapa-participacao" data-etapa="participacao" aria-labelledby="aba-participacao">
+      <span class="etiqueta">Primeiro, seu lugar na roda</span><h2>Vamos celebrar juntos?</h2>
       ${prazoConfPassou
         ? `<p>Prazo de confirmação encerrado. Situação: <span class="pill ${h(p.status)}">${h(p.status)}</span></p>`
         : `<form method="post" action="/c/${h(p.token)}/confirmar">
@@ -135,14 +146,14 @@ r.get('/c/:token', carregar, (req, res) => {
             </div>
             ${p.pin_hash
               ? `<p class="muted pequeno">PIN já criado. Ele será pedido para abrir a raspadinha.</p>`
-              : `<p class="muted pequeno" style="margin-top:14px">Crie um PIN de 4 a 6 números. Ele será pedido para abrir a raspadinha e garante que só ${responsavel ? 'vocês' : 'você'} vejam o resultado (nem o organizador o conhece).</p>${camposPin(false)}`}
+              : `<p class="muted pequeno" style="margin-top:14px">Crie um PIN de 4 a 6 números. Ele será pedido para abrir a raspadinha e protege o resultado de ${responsavel ? 'vocês' : 'você'} (nem o organizador o conhece).</p>${camposPin(false)}`}
             <div class="acoes"><button class="btn">Enviar resposta</button></div>
           </form>`}
     </section>`;
 
     corpo += `
-    <section class="cartao">
-      <h2>2. Dados e foto</h2>
+    <section class="cartao painel-etapa" id="etapa-perfil" data-etapa="perfil" aria-labelledby="aba-perfil">
+      <span class="etiqueta">Pra reconhecer você</span><h2>Deixe seu perfil com a sua cara.</h2>
       <div class="foto-linha">
         ${avatar(p.foto, p.nome)}
         <div>
@@ -165,8 +176,8 @@ r.get('/c/:token', carregar, (req, res) => {
     </section>`;
 
     corpo += `
-    <section class="cartao">
-      <h2>3. Sugestões de presente</h2>
+    <section class="cartao painel-etapa" id="etapa-presentes" data-etapa="presentes" aria-labelledby="aba-presentes">
+      <span class="etiqueta">Uma ajudinha para quem te tirou</span><h2>O que faria você sorrir?</h2>
       <p class="muted">Até três ideias. Quanto mais detalhe, mais fácil acertar! Só o que é o presente é obrigatório. Prazo: ${h(s.formatar(e.prazo_sugestoes))}.</p>
       <form method="post" action="/c/${h(p.token)}/sugestoes">
           ${campoAcesso(req, 'sugestoes')}
@@ -234,7 +245,7 @@ r.get('/c/:token', carregar, (req, res) => {
     </details></section>`;
   }
   res.send(pagina({
-    titulo: e.nome, selo: e.grupo_nome, corpo,
+    titulo: e.nome, selo: e.grupo_nome, corpo, experiencia: 'convite',
     scripts: sorteada ? ['/raspadinha.js'] : ['/convite.js'],
   }));
 });

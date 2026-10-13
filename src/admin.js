@@ -4,6 +4,7 @@ const { db, log } = require('./db');
 const seg = require('./seguranca');
 const s = require('./servico');
 const mensagens = require('./mensagens');
+const historico = require('./historico');
 const { upload, salvarFoto } = require('./fotos');
 const { h, pagina, avatar, aviso } = require('./layout');
 
@@ -70,7 +71,7 @@ const volta = (res, url, msg, erro = false) =>
   res.redirect(303, `${url}${url.includes('?') ? '&' : '?'}${erro ? 'erro' : 'ok'}=${encodeURIComponent(msg)}`);
 
 function nav(ativo) {
-  const it = [['/admin', 'Edições'], ['/admin/pessoas', 'Pessoas'], ['/admin/grupos', 'Grupos']];
+  const it = [['/admin', 'Edições'], ['/admin/pessoas', 'Pessoas'], ['/admin/grupos', 'Grupos'], ['/admin/historico', 'Histórico'], ['/admin/conversas', 'Conversas']];
   return `<nav class="nav">${it.map(([u, t]) => `<a href="${u}" class="${ativo === u ? 'ativo' : ''}">${t}</a>`).join('')}
     <form method="post" action="/admin/sair" style="display:inline"><button class="btn sec mini" style="background:transparent;color:#fbf6ec;border-color:rgba(255,255,255,.2)">Sair</button></form></nav>`;
 }
@@ -473,6 +474,32 @@ r.post('/admin/indicacoes/:iid/:acao', (req, res) => {
   volta(res, `/admin/edicoes/${e.id}`, 'Indicação descartada.');
 });
 
+r.get('/admin/historico', (req, res) => {
+  const pessoas = db.prepare('SELECT id, nome FROM pessoas ORDER BY alfa(nome)').all();
+  const grupos = db.prepare('SELECT id, nome FROM grupos ORDER BY alfa(nome)').all();
+  const opcoes = pessoas.map((p) => `<option value="${p.id}">${h(p.nome)}</option>`).join('');
+  tela(req, res, { titulo: 'Histórico da família', ativo: '/admin/historico', corpo: `<section class="cartao"><span class="etiqueta">Quem presenteou quem</span><h2>Guarde as histórias da nossa roda.</h2><p>Cadastre os pares dos anos anteriores, mesmo que ainda não tenha a lista completa. Eles também serão considerados para evitar repetições no próximo sorteio. Para corrigir um par, cadastre novamente quem presenteou com o destinatário certo.</p><form method="post" action="/admin/historico"><div class="grade-2"><div><label>Grupo</label><select name="grupo">${grupos.map((g) => `<option value="${g.id}">${h(g.nome)}</option>`).join('')}</select></div><div><label>Ano</label><input name="ano" type="number" min="1900" max="${new Date().getFullYear()-1}" value="${new Date().getFullYear()-1}" required></div><div><label>Quem presenteou</label><select name="de" required>${opcoes}</select></div><div><label>Quem recebeu</label><select name="para" required>${opcoes}</select></div></div><button class="btn">Guardar par no histórico</button></form></section>${historico.mostrar()}` });
+});
+r.post('/admin/historico', (req, res) => {
+  try { historico.registrar(Number(req.body.grupo), Number(req.body.ano), Number(req.body.de), Number(req.body.para)); volta(res, '/admin/historico', 'Par guardado no histórico.'); }
+  catch (err) { volta(res, '/admin/historico', err.code?.startsWith('SQLITE') ? 'Confira o grupo e as pessoas selecionadas.' : err.message, true); }
+});
+r.get('/admin/conversas', (req, res) => {
+  const edicoes = db.prepare('SELECT id FROM edicoes ORDER BY ano DESC, id DESC').all();
+  const blocos = edicoes.map(({ id }) => {
+    const e = s.q.edicao.get(id);
+    const participantes = s.q.participantes.all(id);
+    const nucleos = new Map();
+    for (const p of participantes) {
+      const nome = p.nucleo || 'Outros participantes';
+      if (!nucleos.has(nome)) nucleos.set(nome, []);
+      nucleos.get(nome).push(p);
+    }
+    return `<section class="cartao"><div class="conversas-edicao"><div><span class="etiqueta">Escolha seu perfil</span><h2>${h(e.nome)}</h2></div><span class="conversas-total">${participantes.length} participantes</span></div>${[...nucleos].map(([nome, pessoas]) => `<section class="conversas-nucleo"><h3>${h(nome)}</h3><div class="acessos-conversas">${pessoas.map((p) => `<a class="acesso-perfil" href="/c/${h(p.token)}/interacoes"><span class="acesso-avatar">${avatar(p.foto, p.nome, 'ini')}</span><span class="acesso-texto"><strong>${h(p.nome)}</strong><small>${p.responsavel_id ? 'Responsável: ' + h(p.responsavel_nome) : p.status === 'confirmado' && p.pin_hash ? 'Acesso com seu PIN' : 'Confirme a participação primeiro'}</small><span class="acesso-acao">Entrar nas conversas <span aria-hidden="true">↗</span></span></span></a>`).join('')}</div></section>`).join('')}</section>`;
+  }).join('');
+  tela(req, res, { titulo: 'Conversas da família', ativo: '/admin/conversas', corpo: `<section class="cartao"><h2>Entre pelo seu perfil.</h2><p>Escolha seu nome para acessar o mural da família e suas conversas privadas. Use o seu PIN; para crianças, o responsável usa o perfil da criança.</p><p class="muted">As conversas com o amigo sorteado aparecem depois do sorteio. A identidade de quem dará o presente continua oculta.</p></section>${blocos}` });
+});
+
 /* ------------------------------------------------------------------ */
 /* Pessoas                                                              */
 /* ------------------------------------------------------------------ */
@@ -514,7 +541,7 @@ function salvarMembros(pessoaId, body, grupos) {
 }
 
 r.get('/admin/pessoas', (req, res) => {
-  const todas = db.prepare(`SELECT p.*, r.nome AS responsavel_nome,
+  const todas = db.prepare(`SELECT p.*, r.nome AS responsavel_nome, r.telefone AS responsavel_telefone, r.email AS responsavel_email,
       (SELECT GROUP_CONCAT(COALESCE(gm.nucleo, g.nome), ' / ') FROM grupo_membros gm JOIN grupos g ON g.id = gm.grupo_id WHERE gm.pessoa_id = p.id) AS grupos
     FROM pessoas p LEFT JOIN pessoas r ON r.id = p.responsavel_id ORDER BY alfa(p.nome)`).all();
   const grupos = db.prepare('SELECT * FROM grupos ORDER BY alfa(nome)').all();
@@ -524,11 +551,11 @@ r.get('/admin/pessoas', (req, res) => {
     <section class="cartao">
       <h2>Pessoas (${todas.length})</h2>
       <div class="rolagem"><table>
-        <tr><th></th><th>Nome</th><th>Contato</th><th class="esconde-cel">Grupo / núcleo</th></tr>
+        <tr><th scope="col">Foto</th><th scope="col">Nome</th><th scope="col">Telefone e e-mail</th><th class="esconde-cel" scope="col">Grupo / núcleo</th></tr>
         ${todas.map((p) => `<tr>
-          <td>${avatar(p.foto, p.nome, 'ini')}</td>
+          <td><a class="pessoas-avatar" href="/admin/pessoas/${p.id}" aria-label="Editar foto de ${h(p.nome)}">${avatar(p.foto, p.nome, 'ini')}</a></td>
           <td><a href="/admin/pessoas/${p.id}"><b>${h(p.nome)}</b></a></td>
-          <td>${p.responsavel_id ? `<span class="muted">via ${h(p.responsavel_nome)}</span>` : h(p.telefone || '') || '<span class="falta">sem telefone</span>'}</td>
+          <td><div class="pessoa-contatos">${p.responsavel_id ? `<span class="contato-responsavel">Responsável: ${h(p.responsavel_nome)}</span>` : ''}<span>${h((p.responsavel_id ? p.responsavel_telefone : p.telefone) || 'Telefone não informado')}</span><span class="contato-email">${h((p.responsavel_id ? p.responsavel_email : p.email) || 'E-mail não informado')}</span></div></td>
           <td class="esconde-cel muted pequeno">${h(p.grupos || '')}</td></tr>`).join('')}
       </table></div>
     </section>
@@ -606,6 +633,7 @@ r.post('/admin/pessoas/:pid/foto', upload.single('foto'), (req, res) => {
 
 r.post('/admin/pessoas/:pid/excluir', (req, res) => {
   const id = Number(req.params.pid);
+  if (db.prepare('SELECT 1 FROM historico_pares WHERE de_id = ? OR para_id = ?').get(id, id)) return volta(res, `/admin/pessoas/${id}`, 'Esta pessoa faz parte do histórico da família; preserve o cadastro.', true);
   const sorteada = db.prepare(`SELECT 1 FROM participacoes p JOIN edicoes e ON e.id = p.edicao_id
     WHERE p.pessoa_id = ? AND e.status = 'sorteada'`).get(id);
   if (sorteada) return volta(res, `/admin/pessoas/${id}`, 'Esta pessoa está em edição já sorteada; o histórico precisa ser preservado.', true);

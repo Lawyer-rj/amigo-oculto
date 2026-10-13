@@ -168,6 +168,21 @@ CREATE TABLE IF NOT EXISTS mensagens_interacao (
 CREATE INDEX IF NOT EXISTS mensagens_interacao_edicao ON mensagens_interacao(edicao_id, conversa_id, ordem);
 `);
 
+db.exec(`CREATE TABLE IF NOT EXISTS historico_anos (
+  id INTEGER PRIMARY KEY,
+  grupo_id INTEGER NOT NULL REFERENCES grupos(id),
+  ano INTEGER NOT NULL,
+  UNIQUE(grupo_id, ano)
+);
+CREATE TABLE IF NOT EXISTS historico_pares (
+  historico_id INTEGER NOT NULL REFERENCES historico_anos(id) ON DELETE CASCADE,
+  de_id INTEGER NOT NULL REFERENCES pessoas(id),
+  para_id INTEGER NOT NULL REFERENCES pessoas(id),
+  PRIMARY KEY(historico_id, de_id),
+  UNIQUE(historico_id, para_id),
+  CHECK(de_id <> para_id)
+);`);
+
 function log(edicaoId, evento) {
   db.prepare('INSERT INTO registro (edicao_id, evento) VALUES (?, ?)').run(edicaoId ?? null, evento);
 }

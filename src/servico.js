@@ -134,6 +134,9 @@ function historicoPara(edicao) {
   const anterior = db.prepare(`
     SELECT id FROM edicoes WHERE grupo_id = ? AND id <> ? AND ano < ? AND status = 'sorteada'
     ORDER BY ano DESC, sorteado_em DESC LIMIT 1`).get(edicao.grupo_id, edicao.id, edicao.ano);
+  const manual = db.prepare('SELECT id, ano FROM historico_anos WHERE grupo_id = ? AND ano < ? ORDER BY ano DESC LIMIT 1').get(edicao.grupo_id, edicao.ano);
+  const anoAutomatico = anterior ? q.edicao.get(anterior.id).ano : -Infinity;
+  if (manual && manual.ano >= anoAutomatico) return db.prepare('SELECT de_id, para_id FROM historico_pares WHERE historico_id = ?').all(manual.id).map((p) => [p.de_id, p.para_id]);
   return anterior ? paresDaEdicao(anterior.id) : [];
 }
 
