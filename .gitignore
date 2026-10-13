@@ -1,0 +1,11 @@
+node_modules
+dados
+data
+.env
+# Scripts de carga com telefones e e-mails da família: ficam só na máquina
+scripts/importar-telefones.js
+scripts/importar-emails.js
+scripts/ajustes-cadastro.js
+scripts/ajuste-andrea.js
+scripts/definir-valor.js
+scripts/participantes.json

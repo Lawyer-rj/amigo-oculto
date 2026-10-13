@@ -1,0 +1,26 @@
+{
+  "grupo": "Família",
+  "nucleos": [
+    {
+      "nome": "Família 1: Ana",
+      "pessoas": [
+        "Ana Exemplo",
+        "Bruno Exemplo",
+        "Clara Exemplo"
+      ]
+    },
+    {
+      "nome": "Família 2: Diego",
+      "pessoas": [
+        "Diego Exemplo",
+        "Elisa Exemplo"
+      ]
+    },
+    {
+      "nome": "Avós",
+      "pessoas": [
+        "Fernando Exemplo"
+      ]
+    }
+  ]
+}

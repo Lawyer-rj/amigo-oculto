@@ -1,0 +1,18 @@
+services:
+  amigo-oculto:
+    build: .
+    image: amigo-oculto-familia:latest
+    container_name: amigo-oculto
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+    ports:
+      # Só acessível no próprio computador. Na VPS, o proxy reverso (HTTPS) fica na frente.
+      - "127.0.0.1:${PORTA_LOCAL:-3000}:3000"
+    volumes:
+      - dados:/data
+
+volumes:
+  dados:
+    name: amigo-oculto-dados

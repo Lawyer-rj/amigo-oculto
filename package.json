@@ -1,0 +1,22 @@
+{
+  "name": "amigo-oculto-familia",
+  "version": "1.0.0",
+  "description": "Amigo Oculto da Família: convites, sorteio em ciclo único e raspadinhas",
+  "scripts": {
+    "start": "node src/server.js",
+    "carga": "node scripts/carga-inicial.js",
+    "test": "node --test test/*.test.js",
+    "e2e": "node test/e2e.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.3.0",
+    "multer": "^2.4.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}
