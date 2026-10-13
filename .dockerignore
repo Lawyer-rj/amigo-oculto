@@ -3,4 +3,5 @@ dados
 data
 .env
 *.md
+!THIRD-PARTY-NOTICES.md
 .git

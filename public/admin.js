@@ -11,10 +11,15 @@
       }
     });
   });
-  // Marcar convite como enviado ao abrir o WhatsApp
+  // Registra somente a abertura do convite manual no WhatsApp
   document.querySelectorAll('[data-marcar]').forEach((a) => {
     a.addEventListener('click', () => {
       fetch(a.dataset.marcar, { method: 'POST' }).catch(() => {});
+    });
+  });
+  document.querySelectorAll('form[data-confirmar-servico]').forEach((f) => {
+    f.addEventListener('submit', (ev) => {
+      if (ev.submitter?.value === 'servico' && !confirm('Enviar esta mensagem pelo serviço agora? O serviço pode cobrar pelo envio.')) ev.preventDefault();
     });
   });
   // Confirmação antes de ações sensíveis

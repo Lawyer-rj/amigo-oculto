@@ -29,7 +29,7 @@ function pagina({ titulo, selo = 'Amigo Oculto', cabecalho, corpo, largo = false
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Nunito+Sans:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css?v=4">
+<link rel="stylesheet" href="/style.css?v=5">
 </head>
 <body>
 <header class="topo">
@@ -42,7 +42,7 @@ function pagina({ titulo, selo = 'Amigo Oculto', cabecalho, corpo, largo = false
 ${corpo}
 </main>
 <footer class="rodape">Feito em família. Seus dados são usados somente para este amigo oculto.</footer>
-${scripts.map((s) => `<script src="${h(s)}?v=4" defer></script>`).join('\n')}
+${scripts.map((s) => `<script src="${h(s)}?v=5" defer></script>`).join('\n')}
 </body>
 </html>`;
 }

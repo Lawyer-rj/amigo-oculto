@@ -132,8 +132,8 @@ function paresDaEdicao(edicaoId) {
 
 function historicoPara(edicao) {
   const anterior = db.prepare(`
-    SELECT id FROM edicoes WHERE grupo_id = ? AND id <> ? AND status = 'sorteada'
-    ORDER BY ano DESC, sorteado_em DESC LIMIT 1`).get(edicao.grupo_id, edicao.id);
+    SELECT id FROM edicoes WHERE grupo_id = ? AND id <> ? AND ano < ? AND status = 'sorteada'
+    ORDER BY ano DESC, sorteado_em DESC LIMIT 1`).get(edicao.grupo_id, edicao.id, edicao.ano);
   return anterior ? paresDaEdicao(anterior.id) : [];
 }
 
@@ -181,8 +181,8 @@ function executarSorteio(edicaoId, origem = 'organizador') {
       const para = partDaPessoa.get(paraPessoa);
       ins.run(de, edicaoId, seg.cifrar(para, de));
     }
-    db.prepare(`UPDATE edicoes SET status = 'sorteada', sorteado_em = ?, repeticoes = ?, ultimo_erro = NULL, quem_comeca_id = NULL WHERE id = ?`)
-      .run(agoraISO(), r.repeticoes, edicaoId);
+    db.prepare(`UPDATE edicoes SET status = 'sorteada', sorteado_em = ?, sorteio_versao = ?, repeticoes = ?, ultimo_erro = NULL, quem_comeca_id = NULL WHERE id = ?`)
+      .run(agoraISO(), crypto.randomUUID(), r.repeticoes, edicaoId);
   })();
   log(edicaoId, `Sorteio executado (${origem}): ${conf.length} participantes em ciclo único; repetições do ano anterior: ${r.repeticoes}.`);
   return { participantes: conf.length, repeticoes: r.repeticoes };
@@ -191,8 +191,8 @@ function executarSorteio(edicaoId, origem = 'organizador') {
 function anularSorteio(edicaoId) {
   db.transaction(() => {
     db.prepare('DELETE FROM pares WHERE edicao_id = ?').run(edicaoId);
-    db.prepare(`UPDATE edicoes SET status = 'aberta', sorteado_em = NULL, repeticoes = NULL, quem_comeca_id = NULL WHERE id = ?`).run(edicaoId);
-    db.prepare('UPDATE participacoes SET revelado_em = NULL WHERE edicao_id = ?').run(edicaoId);
+    db.prepare(`UPDATE edicoes SET status = 'aberta', sorteio_em = NULL, sorteado_em = NULL, sorteio_versao = NULL, repeticoes = NULL, quem_comeca_id = NULL, ultimo_erro = NULL WHERE id = ?`).run(edicaoId);
+    db.prepare('UPDATE participacoes SET revelado_em = NULL, presente_comprado_em = NULL WHERE edicao_id = ?').run(edicaoId);
   })();
   log(edicaoId, 'Sorteio ANULADO pelo organizador.');
 }

@@ -29,7 +29,7 @@ async function main() {
   const form = (t, p, dados) => fetch(`${BASE}/c/${t}/${p}`, {
     method: 'POST', redirect: 'manual',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(dados),
+    body: new URLSearchParams({ ...dados, pin_atual: String(1000 + tokens.indexOf(t)) }),
   });
 
   // PIN inválido é rejeitado
@@ -43,7 +43,7 @@ async function main() {
     nomeDe[i] = pg.match(/id="nome" name="nome" value="([^"]+)"/)[1];
     const resposta = i === 19 ? 'recusado' : 'confirmado';
     r = await form(tokens[i], 'confirmar', { resposta, pin: String(1000 + i), pin2: String(1000 + i) });
-    assert.strictEqual(r.status, 303);
+    assert.strictEqual(r.status, resposta === 'confirmado' ? 200 : 303);
     await form(tokens[i], 'sugestoes', { texto0: `Livro ${i}`, link0: 'loja.com.br/livro', cor0: 'azul', tamanho0: 'M', detalhes0: 'capa dura', onde0: 'Livraria do centro', texto1: `Caneca ${i}`, link1: '' });
   }
 
@@ -51,13 +51,13 @@ async function main() {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
   const fd = new FormData();
   fd.append('foto', new Blob([png], { type: 'image/png' }), 'f.png');
-  r = await fetch(`${BASE}/c/${tokens[0]}/foto`, { method: 'POST', body: fd });
+  r = await fetch(`${BASE}/c/${tokens[0]}/foto`, { method: 'POST', headers: { 'X-Participant-PIN': '1000' }, body: fd });
   const jf = await r.json();
   assert.ok(jf.ok, JSON.stringify(jf));
   // Arquivo que não é imagem é recusado
   const fd2 = new FormData();
   fd2.append('foto', new Blob(['<script>'], { type: 'image/png' }), 'x.png');
-  r = await fetch(`${BASE}/c/${tokens[1]}/foto`, { method: 'POST', body: fd2 });
+  r = await fetch(`${BASE}/c/${tokens[1]}/foto`, { method: 'POST', headers: { 'X-Participant-PIN': '1001' }, body: fd2 });
   assert.strictEqual(r.status, 400);
 
   // Revelar antes do sorteio: negado

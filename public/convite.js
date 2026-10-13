@@ -28,11 +28,17 @@
     if (!arquivo) return;
     status.textContent = 'Enviando foto...';
     try {
+      const pinFoto = document.getElementById('pin-foto');
+      if (pinFoto && !/^\d{4,6}$/.test(pinFoto.value)) throw new Error('Informe seu PIN antes de enviar a foto.');
+      const cabecalhos = {};
+      if (pinFoto) cabecalhos['X-Participant-PIN'] = pinFoto.value;
+      const csrf = document.querySelector('#foto-acesso input[name=csrf]');
+      if (csrf) cabecalhos['X-CSRF-Token'] = csrf.value;
       const blob = await reduzir(arquivo);
       const fd = new FormData();
       fd.append('foto', blob, 'foto.jpg');
       const destino = input.dataset.admin ? `/admin/pessoas/${input.dataset.admin}/foto` : `/c/${input.dataset.token}/foto`;
-      const r = await fetch(destino, { method: 'POST', body: fd });
+      const r = await fetch(destino, { method: 'POST', headers: cabecalhos, body: fd });
       const j = await r.json();
       if (!j.ok) throw new Error(j.erro || 'Falha no envio.');
       const atual = document.querySelector('.foto-linha .avatar');

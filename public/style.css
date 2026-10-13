@@ -165,3 +165,13 @@ fieldset.sugestao label { font-size: 13px; margin-top: 10px; }
 .raspa-premio .sg-extras { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; margin-top: 2px; }
 .raspa-premio .sg-linha { font-size: 14px; margin-top: 2px; color: var(--tinta); }
 .raspa-premio li a { display: inline-block; margin-top: 4px; font-weight: 700; }
+
+/* Conversas da edição */
+.social-conversas { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; }
+.social-conversas a { padding:10px 14px; border:1px solid #c9a227; border-radius:12px; text-decoration:none; }
+.social-conversas a[aria-current="page"] { background:#2e7d4f; color:#fff; border-color:#2e7d4f; }
+.social-mensagens { display:grid; gap:12px; margin:18px 0; max-height:560px; overflow-y:auto; }
+.social-mensagem { padding:14px; border-radius:12px; border:1px solid #e6ddca; background:#fffdf7; }
+.social-mensagem time { display:block; font-size:.8rem; color:#625c50; margin-top:4px; }
+.social-mensagem p { white-space:pre-wrap; overflow-wrap:anywhere; margin:10px 0; }
+#compras-lista { padding-left:24px; line-height:1.8; }

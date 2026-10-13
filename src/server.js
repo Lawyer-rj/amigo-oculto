@@ -35,6 +35,7 @@ app.use('/fotos', express.static(PASTA_FOTOS, { maxAge: '7d', index: false, dotf
 app.get('/', (req, res) => res.redirect('/admin'));
 app.get('/saude', (req, res) => res.json({ ok: true }));
 
+app.use(require('./interacoes'));
 app.use(require('./convidado'));
 app.use(require('./admin'));
 

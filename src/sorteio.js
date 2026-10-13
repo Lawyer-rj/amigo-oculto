@@ -9,8 +9,8 @@
  * recebem exatamente um presente; a entrega percorre todos sem interrupção.
  *
  * Regra histórica (preferencial): evitar repetir quem tirou quem na edição
- * anterior. Se não houver ciclo sem repetições (só ocorre em grupos muito
- * pequenos), escolhe o ciclo com o MENOR número de repetições.
+ * anterior. Se a busca não encontrar um ciclo sem repetições, escolhe o melhor
+ * candidato encontrado; não afirma que a solução é matematicamente ótima.
  */
 const crypto = require('crypto');
 

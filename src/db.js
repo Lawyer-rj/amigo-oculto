@@ -121,6 +121,53 @@ garantirColuna('sugestoes', 'cor', 'TEXT');
 garantirColuna('sugestoes', 'tamanho', 'TEXT');   // tamanho, numeração ou medida
 garantirColuna('sugestoes', 'detalhes', 'TEXT');  // marca, modelo, sabor, voltagem etc.
 
+// Migração aditiva: preserva os cadastros e as edições existentes.
+const colunasPessoas = new Set(db.prepare('PRAGMA table_info(pessoas)').all().map((c) => c.name));
+if (!colunasPessoas.has('canal_preferido')) db.exec("ALTER TABLE pessoas ADD COLUMN canal_preferido TEXT NOT NULL DEFAULT 'whatsapp'");
+if (!colunasPessoas.has('autoriza_mensagens')) db.exec('ALTER TABLE pessoas ADD COLUMN autoriza_mensagens INTEGER NOT NULL DEFAULT 0');
+db.exec(`CREATE TABLE IF NOT EXISTS mensagens (
+  id INTEGER PRIMARY KEY,
+  participacao_id INTEGER NOT NULL REFERENCES participacoes(id) ON DELETE CASCADE,
+  canal TEXT NOT NULL,
+  tipo TEXT NOT NULL,
+  chave TEXT NOT NULL UNIQUE,
+  estado TEXT NOT NULL,
+  servico_id TEXT,
+  erro TEXT,
+  criado_em TEXT NOT NULL,
+  atualizado_em TEXT NOT NULL
+)`);
+
+garantirColuna('participacoes', 'pin_recuperacao_hash', 'TEXT');
+
+garantirColuna('participacoes', 'presente_comprado_em', 'TEXT');
+garantirColuna('edicoes', 'sorteio_versao', 'TEXT');
+db.exec(`
+CREATE TABLE IF NOT EXISTS sessoes_pessoas (
+  chave TEXT PRIMARY KEY,
+  participacao_id INTEGER NOT NULL REFERENCES participacoes(id) ON DELETE CASCADE,
+  pin_versao TEXT NOT NULL,
+  csrf TEXT NOT NULL,
+  expira_em TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS conversas (
+  id TEXT PRIMARY KEY,
+  edicao_id INTEGER NOT NULL REFERENCES edicoes(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL CHECK (tipo IN ('privada', 'anonima')),
+  vinculos_cifrados TEXT NOT NULL,
+  sorteio_versao TEXT
+);
+CREATE TABLE IF NOT EXISTS mensagens_interacao (
+  ordem INTEGER PRIMARY KEY,
+  id TEXT NOT NULL UNIQUE,
+  edicao_id INTEGER NOT NULL REFERENCES edicoes(id) ON DELETE CASCADE,
+  conversa_id TEXT REFERENCES conversas(id) ON DELETE CASCADE,
+  conteudo_cifrado TEXT NOT NULL,
+  criado_em TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS mensagens_interacao_edicao ON mensagens_interacao(edicao_id, conversa_id, ordem);
+`);
+
 function log(edicaoId, evento) {
   db.prepare('INSERT INTO registro (edicao_id, evento) VALUES (?, ?)').run(edicaoId ?? null, evento);
 }

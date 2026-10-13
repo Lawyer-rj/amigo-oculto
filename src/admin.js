@@ -3,6 +3,7 @@ const express = require('express');
 const { db, log } = require('./db');
 const seg = require('./seguranca');
 const s = require('./servico');
+const mensagens = require('./mensagens');
 const { upload, salvarFoto } = require('./fotos');
 const { h, pagina, avatar, aviso } = require('./layout');
 
@@ -10,6 +11,7 @@ const r = express.Router();
 const BASE_URL = () => (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const limpar = (v, max = 200) => String(v ?? '').trim().slice(0, max);
 const COOKIE = 'ao_admin';
+const servicosHabilitados = () => process.env.ENVIO_POR_SERVICO === 'habilitado';
 
 /* ------------------------------------------------------------------ */
 /* Autenticação                                                         */
@@ -160,6 +162,7 @@ r.get('/admin/edicoes/:id', carregarEdicao, (req, res) => {
     WHERE i.edicao_id = ? AND i.status = 'pendente' ORDER BY i.id`).all(e.id);
   const fora = db.prepare(`SELECT pe.id, pe.nome FROM pessoas pe
     WHERE pe.id NOT IN (SELECT pessoa_id FROM participacoes WHERE edicao_id = ?) ORDER BY alfa(pe.nome)`).all(e.id);
+  const envios = db.prepare(`SELECT m.*, pe.nome FROM mensagens m JOIN participacoes p ON p.id = m.participacao_id JOIN pessoas pe ON pe.id = p.pessoa_id WHERE p.edicao_id = ? ORDER BY m.id DESC LIMIT 80`).all(e.id);
   const registro = db.prepare('SELECT * FROM registro WHERE edicao_id = ? ORDER BY id DESC LIMIT 80').all(e.id);
   const quem = e.quem_comeca_id ? s.q.participacao.get(e.quem_comeca_id) : null;
   const sim = req.query.sim ? JSON.parse(Buffer.from(req.query.sim, 'base64url').toString()) : null;
@@ -174,16 +177,26 @@ r.get('/admin/edicoes/:id', carregarEdicao, (req, res) => {
     const tel = p.responsavel_id ? p.responsavel_telefone : p.telefone;
     const wa = s.linkWhatsApp(tel, textoConvite(e, p));
     const link = `${BASE_URL()}/c/${p.token}`;
+    const cadastro = db.prepare('SELECT * FROM pessoas WHERE id = ?').get(p.pessoa_id);
+    const destinatario = p.responsavel_id ? db.prepare('SELECT * FROM pessoas WHERE id = ?').get(p.responsavel_id) : cadastro;
+    const preferido = destinatario?.canal_preferido || 'whatsapp';
+    const avisavel = !sorteada || !!db.prepare('SELECT 1 FROM pares WHERE participacao_id = ?').get(p.id);
+    const opcoes = mensagens.CANAIS.map((canal) => `<option value="${canal}" ${preferido === canal ? 'selected' : ''}>${mensagens.ROTULOS[canal]}</option>`).join('');
     return cab + `<tr>
       <td>${avatar(p.foto, p.nome, 'ini')}</td>
       <td><b>${h(p.nome)}</b>${p.responsavel_id ? `<br><span class="muted pequeno">resp.: ${h(p.responsavel_nome)}</span>` : ''}</td>
-      <td><span class="pill ${p.status}">${p.status}</span>${p.status === 'confirmado' && !p.pin_hash ? ' <span class="pill recusado">sem PIN</span>' : ''}</td>
+      <td><span class="pill ${p.status}">${p.status}</span>${p.status === 'confirmado' && !p.pin_hash ? ' <span class="pill recusado">sem PIN</span>' : ''}${sorteada && p.presente_comprado_em ? ' <span class="pill confirmado">presente comprado</span>' : ''}</td>
       <td class="esconde-cel">${p.foto ? '<span class="ok">✓</span>' : '<span class="falta">·</span>'}</td>
       <td class="esconde-cel">${p.n_sugestoes ? `<span class="ok">${p.n_sugestoes}</span>` : '<span class="falta">0</span>'}</td>
-      <td class="esconde-cel">${sorteada ? (p.revelado_em ? '<span class="ok">raspou</span>' : '<span class="falta">·</span>') : (p.convite_enviado_em ? '<span class="ok">enviado</span>' : '<span class="falta">·</span>')}</td>
+      <td class="esconde-cel">${sorteada ? (p.revelado_em ? '<span class="ok">raspou</span>' : '<span class="falta">·</span>') : (p.convite_enviado_em ? '<span class="ok">aberto no WhatsApp</span>' : '<span class="falta">·</span>')}</td>
       <td style="white-space:nowrap">
-        <a class="btn wa mini" href="${h(wa)}" target="_blank" rel="noopener noreferrer" data-marcar="/admin/edicoes/${e.id}/convite/${p.id}" ${tel ? '' : 'title="Sem telefone cadastrado: o WhatsApp pedirá o contato"'}>${sorteada ? 'Avisar' : 'Convite'}</a>
+        <a class="btn wa mini" href="${h(wa)}" target="_blank" rel="noopener noreferrer" data-marcar="/admin/edicoes/${e.id}/convite/${p.id}" ${tel ? '' : 'title="Sem telefone cadastrado: o WhatsApp pedirá o contato"'}>${sorteada ? 'Avisar' : 'Convite'} WhatsApp</a>
         <button class="btn sec mini" data-copiar="${h(link)}">Copiar link</button>
+        ${avisavel ? `<form method="post" action="/admin/edicoes/${e.id}/mensagens/${p.id}" class="acoes" data-confirmar-servico>
+          <select name="canal" aria-label="Canal para ${h(p.nome)}" style="width:auto">${opcoes}</select>
+          <button name="modo" value="manual" class="btn sec mini">Abrir mensagem</button>
+          ${servicosHabilitados() ? '<button name="modo" value="servico" class="btn mini">Enviar pelo serviço</button>' : ''}
+        </form>` : '<span class="muted pequeno">Fora do sorteio</span>'}
       </td>
       <td>
         <details><summary class="pequeno">mais</summary>
@@ -195,7 +208,7 @@ r.get('/admin/edicoes/:id', carregarEdicao, (req, res) => {
             </select><button class="btn sec mini">Alterar</button>
           </form>
           <form method="post" action="/admin/edicoes/${e.id}/participacoes/${p.id}/remover" data-confirmar="Remover ${h(p.nome)} desta edição?"><button class="btn sec mini">Remover da edição</button></form>` : ''}
-          ${p.pin_hash ? `<form method="post" action="/admin/edicoes/${e.id}/participacoes/${p.id}/resetar-pin" data-confirmar="Redefinir o PIN de ${h(p.nome)}? A pessoa será avisada na página dela."><button class="btn sec mini">Redefinir PIN</button></form>` : ''}
+          ${p.pin_hash && !sorteada ? `<form method="post" action="/admin/edicoes/${e.id}/participacoes/${p.id}/resetar-pin" data-confirmar="Redefinir o PIN de ${h(p.nome)}? A pessoa será avisada na página dela."><button class="btn sec mini">Redefinir PIN</button></form>` : ''}
           <a class="pequeno" href="/admin/pessoas/${p.pessoa_id}">Editar cadastro</a>
         </details>
       </td></tr>`;
@@ -206,7 +219,7 @@ r.get('/admin/edicoes/:id', carregarEdicao, (req, res) => {
     <h2>${h(e.nome)}</h2>
     <div class="fatos">
       <div class="fato"><b>Confirmados</b><span>${c.confirmados}</span></div>
-      <div class="fato"><b>Pendentes</b><span>${c.pendentes}</span></div>
+      <div class="fato"><b>Pendentes</b><span>${c.pendentes}</span></div>${sorteada ? `<div class="fato"><b>Já compraram</b><span>${parts.filter((p) => p.presente_comprado_em).length}</span></div>` : ''}
       <div class="fato"><b>Recusaram</b><span>${c.recusados}</span></div>
       <div class="fato"><b>Sorteio</b><span>${h(s.formatar(e.sorteio_em))}</span></div>
       <div class="fato"><b>Situação</b><span>${sorteada ? 'sorteada em ' + h(s.formatar(e.sorteado_em)) : 'inscrições abertas'}</span></div>
@@ -219,7 +232,7 @@ r.get('/admin/edicoes/:id', carregarEdicao, (req, res) => {
     <h2>Sorteio</h2>
     ${sorteada ? `
       <p class="ok">Sorteio realizado em ${h(s.formatar(e.sorteado_em))}: ciclo único com todos os confirmados.
-      ${e.repeticoes ? `Atenção: ${e.repeticoes} par(es) repetido(s) do ano anterior (não havia alternativa).` : 'Nenhum par repetido do ano anterior.'}</p>
+      ${e.repeticoes ? `Atenção: ${e.repeticoes} par(es) repetido(s) do ano anterior (a busca não encontrou um ciclo sem repetições).` : 'Nenhum par repetido do ano anterior.'}</p>
       <p class="muted">Os pares são sigilosos e não aparecem neste painel. Use o botão "Avisar" de cada participante para enviar o link da raspadinha.</p>
       <div class="acoes">
         ${quem ? `<div class="fato"><b>Quem começa a entrega</b><span>${h(quem.nome)}</span></div>` : ''}
@@ -286,6 +299,15 @@ r.get('/admin/edicoes/:id', carregarEdicao, (req, res) => {
   </section>
 
   <section class="cartao">
+    <h3>Mensagens por WhatsApp, SMS e e-mail</h3>
+    <p class="muted pequeno">Abrir mensagem prepara o envio no seu WhatsApp, aplicativo de e-mail ou SMS; você confirma lá. O aplicativo não contrata serviços nem faz envios pagos. SMS pode consumir créditos ou a franquia do seu plano. Para crianças, vale o contato e a preferência do responsável.</p>
+    ${servicosHabilitados() ? '<p class="muted pequeno">Aceito significa que o serviço recebeu a solicitação; a entrega ainda não foi confirmada. Não há repetição automática.</p>' : '<p class="muted pequeno">Os serviços automáticos estão desativados. A abertura de uma mensagem não comprova envio ou entrega.</p>'}
+    <div class="rolagem"><table><tr><th>Participante</th><th>Canal</th><th>Mensagem</th><th>Situação</th><th>Quando</th></tr>
+    ${envios.map((m) => `<tr><td>${h(m.nome)}</td><td>${h(mensagens.ROTULOS[m.canal])}</td><td>${h(m.tipo)}</td><td>${h(m.estado)}${m.erro ? `<br><span class="pequeno">${h(m.erro)}</span>` : ''}</td><td>${h(s.formatar(m.atualizado_em))}</td></tr>`).join('') || '<tr><td colspan="5">Nenhum envio pelo serviço registrado.</td></tr>'}
+    </table></div>
+  </section>
+
+  <section class="cartao">
     <h3>Registro de atividades</h3>
     <div class="registro">${registro.map((x) => `<div>${h(s.formatar(x.em + 'Z'))} · ${h(x.evento)}</div>`).join('') || 'Sem registros.'}</div>
   </section>`;
@@ -315,6 +337,7 @@ r.post('/admin/edicoes/:id/config', carregarEdicao, (req, res) => {
 });
 
 r.post('/admin/edicoes/:id/incluir-grupo', carregarEdicao, (req, res) => {
+  if (req.edicao.status === 'sorteada') return volta(res, `/admin/edicoes/${req.edicao.id}`, 'Edição já sorteada.', true);
   const n = s.incluirGrupoInteiro(req.edicao.id);
   volta(res, `/admin/edicoes/${req.edicao.id}`, `${n} membro(s) do grupo conferido(s) na edição.`);
 });
@@ -323,6 +346,44 @@ r.post('/admin/edicoes/:id/incluir', carregarEdicao, (req, res) => {
   if (req.edicao.status === 'sorteada') return volta(res, `/admin/edicoes/${req.edicao.id}`, 'Edição já sorteada.', true);
   s.incluirNaEdicao(req.edicao.id, Number(req.body.pessoa_id));
   volta(res, `/admin/edicoes/${req.edicao.id}`, 'Pessoa incluída.');
+});
+
+// Somente ações explícitas do organizador enviam mensagens. O sorteio não envia sozinho.
+r.post('/admin/edicoes/:id/mensagens/:pid', carregarEdicao, async (req, res) => {
+  const e = req.edicao;
+  const destinoPainel = `/admin/edicoes/${e.id}`;
+  const p = s.q.participacao.get(Number(req.params.pid));
+  if (!p || p.edicao_id !== e.id) return volta(res, destinoPainel, 'Participante não encontrado.', true);
+  if (e.status === 'sorteada' && !db.prepare('SELECT 1 FROM pares WHERE participacao_id = ?').get(p.id)) {
+    return volta(res, destinoPainel, 'Esta pessoa não participou do sorteio.', true);
+  }
+  if (!['manual', 'servico'].includes(req.body.modo)) return volta(res, destinoPainel, 'Escolha a forma de envio.', true);
+  if (req.body.modo === 'servico' && !servicosHabilitados()) return volta(res, destinoPainel, 'O envio por serviços está desativado. Use Abrir mensagem e confirme no seu aplicativo.', true);
+  let m, chave, registroId;
+  try {
+    const destinatario = db.prepare('SELECT * FROM pessoas WHERE id = ?').get(p.responsavel_id || p.pessoa_id);
+    if (!destinatario) throw new Error('Confira o cadastro do responsável.');
+    m = mensagens.preparar({ edicao: e, participante: p, destinatario, canal: req.body.canal, baseUrl: BASE_URL() });
+    if (req.body.modo === 'manual') {
+      const href = mensagens.linkManual(m);
+      return tela(req, res, { titulo: 'Mensagem pronta', ativo: '/admin', corpo: `<section class="cartao"><p>Destinatário: <b>${h(destinatario.nome)}</b> · ${h(mensagens.ROTULOS[m.canal])} · ${h(m.destino)}</p><p>Confirme o envio no aplicativo. Abrir esta mensagem não confirma envio nem entrega.</p><pre style="white-space:pre-wrap">${h(m.canal === 'sms' ? m.curto : m.texto)}</pre><div class="acoes"><a class="btn" href="${h(href)}" target="_blank" rel="noopener noreferrer">Abrir ${h(mensagens.ROTULOS[m.canal])}</a><button class="btn sec" data-copiar="${h(m.canal === 'sms' ? m.curto : m.texto)}">Copiar mensagem</button><a class="btn sec" href="${destinoPainel}">Voltar</a></div></section>` });
+    }
+    mensagens.validarAutomatico(m, destinatario);
+    chave = mensagens.chaveEnvio(e, p, m.canal);
+    const agora = s.agoraISO();
+    const registro = db.prepare(`INSERT OR IGNORE INTO mensagens (participacao_id, canal, tipo, chave, estado, criado_em, atualizado_em) VALUES (?, ?, ?, ?, 'processando', ?, ?)`)
+      .run(p.id, m.canal, m.tipo, chave, agora, agora);
+    if (!registro.changes) return volta(res, destinoPainel, 'Esta mensagem já tem uma tentativa registrada neste canal. Confira a situação no histórico; o envio não será duplicado.', true);
+    registroId = registro.lastInsertRowid;
+    const resultado = await mensagens.enviar(m, chave);
+    db.prepare('UPDATE mensagens SET estado = ?, servico_id = ?, atualizado_em = ? WHERE id = ?').run(resultado.estado, resultado.id, s.agoraISO(), registroId);
+    log(e.id, `${p.nome}: ${m.tipo} aceito pelo serviço de ${mensagens.ROTULOS[m.canal]}. Entrega não confirmada.`);
+    volta(res, destinoPainel, 'Mensagem aceita pelo serviço. Isso ainda não confirma a entrega.');
+  } catch (err) {
+    if (registroId) db.prepare('UPDATE mensagens SET estado = ?, erro = ?, atualizado_em = ? WHERE id = ?')
+      .run(err.estado || 'incerto', String(err.message).slice(0, 300), s.agoraISO(), registroId);
+    volta(res, destinoPainel, err.message, true);
+  }
 });
 
 r.post('/admin/edicoes/:id/convite/:pid', carregarEdicao, (req, res) => {
@@ -355,9 +416,10 @@ r.post('/admin/edicoes/:id/participacoes/:pid/remover', carregarEdicao, (req, re
 
 r.post('/admin/edicoes/:id/participacoes/:pid/resetar-pin', carregarEdicao, (req, res) => {
   const e = req.edicao;
+  if (e.status === 'sorteada') return volta(res, `/admin/edicoes/${e.id}`, 'Depois do sorteio, só o participante pode recuperar o PIN com seu código pessoal.', true);
   const p = s.q.participacao.get(Number(req.params.pid));
   if (!p || p.edicao_id !== e.id) return volta(res, `/admin/edicoes/${e.id}`, 'Participante não encontrado.', true);
-  db.prepare('UPDATE participacoes SET pin_hash = NULL, pin_tentativas = 0, pin_bloqueio_ate = NULL, pin_redefinido_em = ? WHERE id = ?').run(s.agoraISO(), p.id);
+  db.prepare('UPDATE participacoes SET pin_hash = NULL, pin_recuperacao_hash = NULL, pin_tentativas = 0, pin_bloqueio_ate = NULL, pin_redefinido_em = ? WHERE id = ?').run(s.agoraISO(), p.id);
   log(e.id, `PIN de ${p.nome} redefinido pelo organizador.`);
   volta(res, `/admin/edicoes/${e.id}`, `PIN de ${p.nome} apagado. Envie o link de novo para a pessoa criar outro.`);
 });
@@ -380,7 +442,7 @@ r.post('/admin/edicoes/:id/sortear', carregarEdicao, (req, res) => {
 r.post('/admin/edicoes/:id/anular', carregarEdicao, (req, res) => {
   if (req.body.confirma !== 'ANULAR') return volta(res, `/admin/edicoes/${req.edicao.id}`, 'Digite ANULAR para confirmar.', true);
   s.anularSorteio(req.edicao.id);
-  volta(res, `/admin/edicoes/${req.edicao.id}`, 'Sorteio anulado. Ajuste os participantes e sorteie de novo.');
+  volta(res, `/admin/edicoes/${req.edicao.id}`, 'Sorteio anulado e agendamento suspenso. Ajuste os participantes e sorteie de novo ou marque uma nova data.');
 });
 
 r.post('/admin/edicoes/:id/quem-comeca', carregarEdicao, (req, res) => {
@@ -395,6 +457,7 @@ r.post('/admin/edicoes/:id/quem-comeca', carregarEdicao, (req, res) => {
 r.post('/admin/indicacoes/:iid/:acao', (req, res) => {
   const i = db.prepare('SELECT * FROM indicacoes WHERE id = ?').get(Number(req.params.iid));
   if (!i) return res.redirect(303, '/admin');
+  if (i.status !== 'pendente') return volta(res, `/admin/edicoes/${i.edicao_id}`, 'Esta indicação já foi tratada.', true);
   const e = s.q.edicao.get(i.edicao_id);
   if (req.params.acao === 'aceitar') {
     db.transaction(() => {
@@ -424,6 +487,10 @@ function formPessoa(p, todas, grupos, membros) {
       <div><label>WhatsApp</label><input type="tel" name="telefone" value="${h(p?.telefone)}" placeholder="(21) 99999-9999"></div>
       <div><label>E-mail</label><input type="email" name="email" value="${h(p?.email)}"></div>
     </div>
+    <label>Canal preferido para convites e avisos</label>
+    <select name="canal_preferido">${mensagens.CANAIS.map((canal) => `<option value="${canal}" ${(p?.canal_preferido || 'whatsapp') === canal ? 'selected' : ''}>${mensagens.ROTULOS[canal]}</option>`).join('')}</select>
+${servicosHabilitados() ? `<label style="font-weight:400"><input type="checkbox" name="autoriza_mensagens" value="1" ${p?.autoriza_mensagens ? 'checked' : ''}> O destinatário autorizou receber convites e avisos pelos serviços de envio.</label>` : ''}
+    <p class="muted pequeno">Para crianças, configure o canal e os contatos no cadastro do responsável.</p>
     <label>Grupos e núcleo familiar</label>
     ${grupos.map((g) => {
       const m = membros.find((x) => x.grupo_id === g.id);
@@ -480,6 +547,7 @@ r.post('/admin/pessoas', (req, res) => {
   const grupos = db.prepare('SELECT * FROM grupos').all();
   const id = db.prepare('INSERT INTO pessoas (nome, telefone, email, responsavel_id, observacao) VALUES (?, ?, ?, ?, ?)')
     .run(nome, limpar(b.telefone, 30) || null, limpar(b.email, 120) || null, Number(b.responsavel_id) || null, limpar(b.observacao) || null).lastInsertRowid;
+  db.prepare('UPDATE pessoas SET canal_preferido = ?, autoriza_mensagens = ? WHERE id = ?').run(mensagens.CANAIS.includes(b.canal_preferido) ? b.canal_preferido : 'whatsapp', b.autoriza_mensagens === '1' ? 1 : 0, id);
   salvarMembros(id, b, grupos);
   // Entra automaticamente nas edições abertas dos grupos marcados
   const abertas = db.prepare(`SELECT e.id FROM edicoes e JOIN grupo_membros gm ON gm.grupo_id = e.grupo_id
@@ -522,6 +590,7 @@ r.post('/admin/pessoas/:pid', (req, res) => {
   if (resp === id) return volta(res, `/admin/pessoas/${id}`, 'A pessoa não pode ser responsável por si mesma.', true);
   db.prepare('UPDATE pessoas SET nome = ?, telefone = ?, email = ?, responsavel_id = ?, observacao = ? WHERE id = ?')
     .run(limpar(b.nome, 80), limpar(b.telefone, 30) || null, limpar(b.email, 120) || null, resp, limpar(b.observacao) || null, id);
+  db.prepare('UPDATE pessoas SET canal_preferido = ?, autoriza_mensagens = ? WHERE id = ?').run(mensagens.CANAIS.includes(b.canal_preferido) ? b.canal_preferido : 'whatsapp', b.autoriza_mensagens === '1' ? 1 : 0, id);
   salvarMembros(id, b, db.prepare('SELECT * FROM grupos').all());
   volta(res, `/admin/pessoas/${id}`, 'Cadastro salvo.');
 });
