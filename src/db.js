@@ -183,6 +183,18 @@ CREATE TABLE IF NOT EXISTS historico_pares (
   CHECK(de_id <> para_id)
 );`);
 
+garantirColuna('edicoes', 'encerrada_em', 'TEXT');
+garantirColuna('edicoes', 'album_recado', 'TEXT');
+garantirColuna('pessoas', 'email_verificado', 'TEXT');
+db.exec(`CREATE TABLE IF NOT EXISTS links_email (
+ hash TEXT PRIMARY KEY, participacao_id INTEGER NOT NULL REFERENCES participacoes(id) ON DELETE CASCADE,
+ tipo TEXT NOT NULL, destino TEXT NOT NULL, pin_versao TEXT NOT NULL, expira_em TEXT NOT NULL, usado_em TEXT
+);
+CREATE TABLE IF NOT EXISTS fila_email (
+ id TEXT PRIMARY KEY, participacao_id INTEGER REFERENCES participacoes(id) ON DELETE CASCADE,
+ conteudo TEXT NOT NULL, estado TEXT NOT NULL DEFAULT 'pendente', criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL
+);`);
+
 function log(edicaoId, evento) {
   db.prepare('INSERT INTO registro (edicao_id, evento) VALUES (?, ?)').run(edicaoId ?? null, evento);
 }

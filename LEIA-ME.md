@@ -156,3 +156,15 @@ As mensagens e os vínculos das conversas ficam cifrados no banco com a chave do
 ### Docker e migração
 
 A atualização adiciona tabelas e colunas na inicialização e preserva os dados existentes. Antes de atualizar, faça backup do banco, fotos e configuração. Preserve APP_SECRET ao migrar para a VPS. Não é necessário contratar nenhum serviço de mensagens.
+
+
+## Sessão, e-mail e álbum
+O participante entra com PIN uma vez e mantém acesso ao perfil, sugestões, conversas e raspadinha por 24 horas. Sair, expirar ou trocar o PIN revoga o acesso. A criação inicial não mostra mais códigos longos.
+
+Configure SMTP_HOST, SMTP_PORT (465 ou 587), SMTP_USER, SMTP_PASS e EMAIL_REMETENTE em ambiente privado. Use a senha de aplicativo quando exigida pelo provedor. TLS é obrigatório. Nunca inclua credenciais no Git. O envio fica indisponível até configuração; não há contratação automática.
+
+Depois de cadastrar seu endereço, o participante clica em Enviar link de verificação. Links expiram em 30 minutos e são de uso único. Recuperação só usa o endereço já verificado, inclusive para crianças via responsável. Mudança de endereço exige nova verificação. O organizador pode enviar convite individual por SMTP quando configurado, e a fila mostra aceito pelo servidor ou incerto (sem reenvio automático que possa duplicar mensagens). Confirmações, resultado e lembretes a 24 horas do prazo são automáticos para contatos verificados. Os e-mails não revelam pares.
+
+No final da troca, abra Edições > Álbum e lembranças > Preparar álbum. Inclua fotos JPG/PNG, uma mensagem para a capa e digite ENCERRAR. Isto publica os pares no histórico; não pode anular esse sorteio depois. Revise a prévia e baixe o PDF. Participantes conectados também podem baixar e incluir/remover seus próprios recados compartilháveis. Mensagens privadas, contatos, tokens e PINs ficam fora do PDF. Fotos WEBP de perfil aparecem na prévia; no PDF há o nome como alternativa, pois o gerador aceita JPG/PNG.
+
+O backup ZIP é privado, acessível só ao organizador. Inclui TODAS as edições, SQLite consistente, fotos e APP_SECRET para restaurar conversas e pares cifrados. Não compartilhe no grupo. Configure novamente senha de organizador, endereço público e SMTP ao restaurar. O backup é criado sob demanda; não ocorre cópia automática para serviço externo.

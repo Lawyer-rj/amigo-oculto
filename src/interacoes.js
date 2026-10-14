@@ -11,8 +11,8 @@ const r = express.Router();
 const digest = (v) => crypto.createHash('sha256').update(v).digest('hex');
 const base = (p) => `/c/${p.token}/interacoes`;
 const versaoSorteio = (e) => e.sorteio_versao || e.sorteado_em;
-const cookieNome = (p) => `ao_pessoa_${p.id}`;
-const cookieOpcoes = (p) => `HttpOnly; SameSite=Strict; Path=/c/${p.token}; ${(process.env.BASE_URL || '').startsWith('https://') ? 'Secure; ' : ''}`;
+const sessoes = require('./sessoes');
+const sessao = sessoes.ler;
 
 function carregar(req, res, next) {
   const p = s.q.participacaoPorToken.get(req.params.token);
@@ -20,17 +20,9 @@ function carregar(req, res, next) {
   req.part = p; req.edicao = s.q.edicao.get(p.edicao_id);
   next();
 }
-function sessao(req) {
-  const p = req.part;
-  const item = (req.headers.cookie || '').split(/;\s*/).find((x) => x.startsWith(cookieNome(p) + '='));
-  const token = item?.slice(cookieNome(p).length + 1);
-  if (!token || token.length > 100 || !p.pin_hash || p.status !== 'confirmado') return null;
-  return db.prepare('SELECT * FROM sessoes_pessoas WHERE chave = ? AND participacao_id = ? AND pin_versao = ? AND expira_em > ?')
-    .get(digest(token), p.id, digest(p.pin_hash), s.agoraISO()) || null;
-}
 function autenticar(req, res, next) {
   req.sessao = sessao(req);
-  if (!req.sessao) {
+  if (!req.sessao || req.part.status !== 'confirmado') {
     if (req.path.endsWith('/estado')) return res.status(401).json({ erro: 'Entre novamente com seu PIN.' });
     return res.redirect(303, base(req.part));
   }
@@ -95,7 +87,7 @@ r.get('/c/:token/interacoes', carregar, (req, res) => {
   req.sessao = sessao(req);
   const p = req.part, e = req.edicao;
   const linkVoltar = `<a class="btn sec" href="/c/${h(p.token)}">Meu cadastro e raspadinha</a>`;
-  if (!req.sessao) return res.send(pagina({ titulo: 'A brincadeira continua', selo: e.nome, experiencia: 'social', corpo: `${aviso(req)}<section class="cartao"><h2>Entre como ${h(p.nome)}</h2><p>Confirme sua participação e use seu PIN para conversar e acompanhar as compras. Para crianças, o responsável entra pelo link e PIN da criança.</p><form method="post" action="${base(p)}/entrar"><label for="pin-social">Seu PIN</label><input id="pin-social" type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" required autocomplete="current-password"><button class="btn">Entrar</button></form>${linkVoltar}</section>` }));
+  if (!req.sessao || p.status !== 'confirmado') return res.send(pagina({ titulo: 'A brincadeira continua', selo: e.nome, experiencia: 'social', corpo: `${aviso(req)}<section class="cartao"><h2>Entre como ${h(p.nome)}</h2><p>Confirme sua participação e use seu PIN para conversar e acompanhar as compras. Para crianças, o responsável entra pelo link e PIN da criança.</p><form method="post" action="${base(p)}/entrar"><label for="pin-social">Seu PIN</label><input id="pin-social" type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" required autocomplete="current-password"><button class="btn">Entrar</button></form>${linkVoltar}</section>` }));
   criarAnonimas(p, e);
   const c = req.query.conversa ? conversaPermitida(p, e, req.query.conversa) : null;
   if (req.query.conversa && !c) return res.status(404).send('Conversa não encontrada.');
@@ -122,11 +114,7 @@ r.post('/c/:token/interacoes/entrar', carregar, (req, res) => {
   if (p.status !== 'confirmado' || !p.pin_hash) return redirect(req, res, 'Confirme sua participação e crie seu PIN primeiro.', true);
   const erro = acesso.validar(p, req.body.pin, 'pin');
   if (erro) return redirect(req, res, erro, true);
-  const token = crypto.randomBytes(32).toString('base64url');
-  db.prepare('DELETE FROM sessoes_pessoas WHERE expira_em <= ? OR participacao_id = ?').run(s.agoraISO(), p.id);
-  db.prepare('INSERT INTO sessoes_pessoas (chave, participacao_id, pin_versao, csrf, expira_em) VALUES (?, ?, ?, ?, ?)')
-    .run(digest(token), p.id, digest(p.pin_hash), crypto.randomBytes(24).toString('base64url'), new Date(Date.now() + 4 * 3600e3).toISOString());
-  res.setHeader('Set-Cookie', `${cookieNome(p)}=${token}; ${cookieOpcoes(p)}Max-Age=14400`);
+  sessoes.criar(res, p);
   res.redirect(303, base(p));
 });
 r.use('/c/:token/interacoes', carregar, autenticar);
@@ -134,8 +122,7 @@ r.get('/c/:token/interacoes/historico', (req, res) => {
   res.send(pagina({ titulo: 'Histórico da família', selo: req.edicao.nome, corpo: `<a class="btn sec" href="${base(req.part)}">Voltar às conversas</a>${historico.mostrar(req.edicao.grupo_id, req.edicao.ano)}` }));
 });
 r.post('/c/:token/interacoes/sair' , (req, res) => {
-  db.prepare('DELETE FROM sessoes_pessoas WHERE chave = ?').run(req.sessao.chave);
-  res.setHeader('Set-Cookie', `${cookieNome(req.part)}=; ${cookieOpcoes(req.part)}Max-Age=0`);
+  sessoes.sair(res, req.part, req.sessao);
   res.redirect(303, base(req.part));
 });
 r.get('/c/:token/interacoes/estado', (req, res) => {

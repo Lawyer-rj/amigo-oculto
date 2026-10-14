@@ -5,6 +5,9 @@ const seg = require('./seguranca');
 const s = require('./servico');
 const mensagens = require('./mensagens');
 const historico = require('./historico');
+const album = require('./album');
+const email = require('./email');
+const crypto = require('crypto');
 const { upload, salvarFoto } = require('./fotos');
 const { h, pagina, avatar, aviso } = require('./layout');
 
@@ -71,7 +74,7 @@ const volta = (res, url, msg, erro = false) =>
   res.redirect(303, `${url}${url.includes('?') ? '&' : '?'}${erro ? 'erro' : 'ok'}=${encodeURIComponent(msg)}`);
 
 function nav(ativo) {
-  const it = [['/admin', 'Edições'], ['/admin/pessoas', 'Pessoas'], ['/admin/grupos', 'Grupos'], ['/admin/historico', 'Histórico'], ['/admin/conversas', 'Conversas']];
+  const it = [['/admin', 'Edições'], ['/admin/pessoas', 'Pessoas'], ['/admin/grupos', 'Grupos'], ['/admin/historico', 'Histórico'], ['/admin/conversas', 'Conversas'], ['/admin/email','E-mails']];
   return `<nav class="nav">${it.map(([u, t]) => `<a href="${u}" class="${ativo === u ? 'ativo' : ''}">${t}</a>`).join('')}
     <form method="post" action="/admin/sair" style="display:inline"><button class="btn sec mini" style="background:transparent;color:#fbf6ec;border-color:rgba(255,255,255,.2)">Sair</button></form></nav>`;
 }
@@ -193,6 +196,7 @@ r.get('/admin/edicoes/:id', carregarEdicao, (req, res) => {
       <td style="white-space:nowrap">
         <a class="btn wa mini" href="${h(wa)}" target="_blank" rel="noopener noreferrer" data-marcar="/admin/edicoes/${e.id}/convite/${p.id}" ${tel ? '' : 'title="Sem telefone cadastrado: o WhatsApp pedirá o contato"'}>${sorteada ? 'Avisar' : 'Convite'} WhatsApp</a>
         <button class="btn sec mini" data-copiar="${h(link)}">Copiar link</button>
+        ${email.configurado() && destinatario.email && avisavel ? `<form method="post" action="/admin/edicoes/${e.id}/email/${p.id}"><button class="btn sec mini">${sorteada?'Avisar':'Convidar'} por e-mail</button></form>` : ''}
         ${avisavel ? `<form method="post" action="/admin/edicoes/${e.id}/mensagens/${p.id}" class="acoes" data-confirmar-servico>
           <select name="canal" aria-label="Canal para ${h(p.nome)}" style="width:auto">${opcoes}</select>
           <button name="modo" value="manual" class="btn sec mini">Abrir mensagem</button>
@@ -280,6 +284,8 @@ r.get('/admin/edicoes/:id', carregarEdicao, (req, res) => {
   </section>` : ''}
 
   <section class="cartao">
+    <h2>Álbum e lembranças</h2><p>Depois da troca, encerre a edição para publicar os pares e guardar a história da família.</p><a class="btn sec" href="/admin/edicoes/${e.id}/album">${e.encerrada_em ? 'Ver álbum e baixar PDF' : 'Preparar álbum da edição'}</a>
+  </section><section class="cartao">
     <h2>Datas, valores e mensagem</h2>
     <form method="post" action="/admin/edicoes/${e.id}/config">
       <div class="grade-2">
@@ -318,6 +324,7 @@ r.get('/admin/edicoes/:id', carregarEdicao, (req, res) => {
 
 r.post('/admin/edicoes/:id/config', carregarEdicao, (req, res) => {
   const e = req.edicao;
+  if(e.encerrada_em) return volta(res,`/admin/edicoes/${e.id}`,'Edição encerrada: as configurações estão preservadas.',true);
   const b = req.body;
   const num = (v) => (v === '' || v === undefined ? null : Number(v));
   const vmin = num(b.valor_min);
@@ -417,7 +424,7 @@ r.post('/admin/edicoes/:id/participacoes/:pid/remover', carregarEdicao, (req, re
 
 r.post('/admin/edicoes/:id/participacoes/:pid/resetar-pin', carregarEdicao, (req, res) => {
   const e = req.edicao;
-  if (e.status === 'sorteada') return volta(res, `/admin/edicoes/${e.id}`, 'Depois do sorteio, só o participante pode recuperar o PIN com seu código pessoal.', true);
+  if (e.status === 'sorteada') return volta(res, `/admin/edicoes/${e.id}`, 'Depois do sorteio, só o participante pode recuperar o PIN pelo e-mail verificado.', true);
   const p = s.q.participacao.get(Number(req.params.pid));
   if (!p || p.edicao_id !== e.id) return volta(res, `/admin/edicoes/${e.id}`, 'Participante não encontrado.', true);
   db.prepare('UPDATE participacoes SET pin_hash = NULL, pin_recuperacao_hash = NULL, pin_tentativas = 0, pin_bloqueio_ate = NULL, pin_redefinido_em = ? WHERE id = ?').run(s.agoraISO(), p.id);
@@ -442,6 +449,7 @@ r.post('/admin/edicoes/:id/sortear', carregarEdicao, (req, res) => {
 
 r.post('/admin/edicoes/:id/anular', carregarEdicao, (req, res) => {
   if (req.body.confirma !== 'ANULAR') return volta(res, `/admin/edicoes/${req.edicao.id}`, 'Digite ANULAR para confirmar.', true);
+  if(req.edicao.encerrada_em) return volta(res,`/admin/edicoes/${req.edicao.id}`,'Edição encerrada: o histórico está preservado.',true);
   s.anularSorteio(req.edicao.id);
   volta(res, `/admin/edicoes/${req.edicao.id}`, 'Sorteio anulado e agendamento suspenso. Ajuste os participantes e sorteie de novo ou marque uma nova data.');
 });
@@ -486,18 +494,7 @@ r.post('/admin/historico', (req, res) => {
 });
 r.get('/admin/conversas', (req, res) => {
   const edicoes = db.prepare('SELECT id FROM edicoes ORDER BY ano DESC, id DESC').all();
-  const blocos = edicoes.map(({ id }) => {
-    const e = s.q.edicao.get(id);
-    const participantes = s.q.participantes.all(id);
-    const nucleos = new Map();
-    for (const p of participantes) {
-      const nome = p.nucleo || 'Outros participantes';
-      if (!nucleos.has(nome)) nucleos.set(nome, []);
-      nucleos.get(nome).push(p);
-    }
-    return `<section class="cartao"><div class="conversas-edicao"><div><span class="etiqueta">Escolha seu perfil</span><h2>${h(e.nome)}</h2></div><span class="conversas-total">${participantes.length} participantes</span></div>${[...nucleos].map(([nome, pessoas]) => `<section class="conversas-nucleo"><h3>${h(nome)}</h3><div class="acessos-conversas">${pessoas.map((p) => `<a class="acesso-perfil" href="/c/${h(p.token)}/interacoes"><span class="acesso-avatar">${avatar(p.foto, p.nome, 'ini')}</span><span class="acesso-texto"><strong>${h(p.nome)}</strong><small>${p.responsavel_id ? 'Responsável: ' + h(p.responsavel_nome) : p.status === 'confirmado' && p.pin_hash ? 'Acesso com seu PIN' : 'Confirme a participação primeiro'}</small><span class="acesso-acao">Entrar nas conversas <span aria-hidden="true">↗</span></span></span></a>`).join('')}</div></section>`).join('')}</section>`;
-  }).join('');
-  tela(req, res, { titulo: 'Conversas da família', ativo: '/admin/conversas', corpo: `<section class="cartao"><h2>Entre pelo seu perfil.</h2><p>Escolha seu nome para acessar o mural da família e suas conversas privadas. Use o seu PIN; para crianças, o responsável usa o perfil da criança.</p><p class="muted">As conversas com o amigo sorteado aparecem depois do sorteio. A identidade de quem dará o presente continua oculta.</p></section>${blocos}` });
+  tela(req, res, { titulo: 'Conversas da família', ativo: '/admin/conversas', corpo: `<section class="cartao"><h2>Entre pelo seu perfil.</h2><p>O mural, as mensagens privadas e a conversa anônima ficam no acesso pessoal de cada participante. Escolha seu nome e entre com seu PIN. Para crianças, o responsável usa o perfil da criança.</p><p>O painel não dá acesso às conversas privadas de outras pessoas. A conversa anônima aparece depois do sorteio: quem dá o presente continua oculto.</p></section>${edicoes.map(({id}) => { const e=s.q.edicao.get(id); return `<section class="cartao"><h2>${h(e.nome)}</h2><div class="acessos-conversas">${s.q.participantes.all(id).map((p)=>`<a class="btn sec" href="/c/${h(p.token)}/interacoes">${h(p.nome)} <span aria-hidden="true">↗</span></a>`).join('')}</div></section>`; }).join('')}` });
 });
 
 /* ------------------------------------------------------------------ */
@@ -666,6 +663,55 @@ r.post('/admin/grupos', (req, res) => {
   if (!nome) return volta(res, '/admin/grupos', 'Informe o nome.', true);
   try { db.prepare('INSERT INTO grupos (nome) VALUES (?)').run(nome); } catch { return volta(res, '/admin/grupos', 'Já existe um grupo com esse nome.', true); }
   volta(res, '/admin/grupos', 'Grupo criado.');
+});
+
+
+r.post('/admin/edicoes/:id/email/:pid',carregarEdicao,(req,res)=>{
+ const p=s.q.participacao.get(Number(req.params.pid)),e=req.edicao;
+ if(!p || p.edicao_id!==e.id) return res.status(404).send('Perfil não encontrado.');
+ if(e.status==='sorteada'&&!db.prepare('SELECT 1 FROM pares WHERE participacao_id=?').get(p.id)) return volta(res,`/admin/edicoes/${e.id}`,'Este perfil não participou do sorteio.',true);
+ try {
+  if(!email.configurado()) throw new Error('Configure o remetente de e-mail primeiro.');
+  const m=mensagens.preparar({edicao:e,participante:p,destinatario:email.contato(p),canal:'email',baseUrl:BASE_URL()});
+  const entrou=email.enfileirar('convite-smtp-'+mensagens.chaveEnvio(e,p,'email'),p,m.destino,m.assunto,m.texto);
+  void email.processar();volta(res,`/admin/edicoes/${e.id}`,entrou?'E-mail colocado na fila. Acompanhe em E-mails.':'Este aviso já foi solicitado. Confira sua situação em E-mails.');
+ } catch(err){volta(res,`/admin/edicoes/${e.id}`,err.message,true);}
+});
+r.get('/admin/email',(req,res)=>{
+ const filas=db.prepare('SELECT f.estado,f.atualizado_em,p.nome FROM fila_email f LEFT JOIN participacoes pa ON pa.id=f.participacao_id LEFT JOIN pessoas p ON p.id=pa.pessoa_id ORDER BY f.criado_em DESC LIMIT 50').all();
+ tela(req,res,{titulo:'E-mails da família',ativo:'/admin/email',corpo:`<section class="cartao"><h2>${email.configurado()?'Envio configurado':'Vamos preparar o remetente'}</h2><p>Ao verificar o e-mail, o participante permite receber confirmações, avisos do sorteio e lembretes. A recuperação usa links de 30 minutos. Para crianças, vale o e-mail do responsável.</p><p>${email.configurado()?'Os envios são processados automaticamente. Aceito significa recebido pelo servidor de e-mail, sem garantia de entrega.':'O envio está indisponível até configurar a conta remetente. Os convites por WhatsApp continuam disponíveis.'}</p><p>Configuração no arquivo privado de ambiente: SMTP_HOST, SMTP_PORT (465 ou 587), SMTP_USER, SMTP_PASS e EMAIL_REMETENTE. Depois, reinicie o aplicativo. Nunca coloque senhas no histórico ou em mensagens.</p><p>O aplicativo não contrata serviços. As condições de envio dependem da sua conta de e-mail.</p></section><section class="cartao"><h2>Últimos envios</h2><div class="rolagem"><table><tr><th>Perfil</th><th>Situação</th><th>Atualizado</th></tr>${filas.map(x=>`<tr><td>${h(x.nome||'Perfil removido')}</td><td>${h({pendente:'Na fila',enviando:'Em processamento',aceito:'Aceito pelo servidor',incerto:'Confira o remetente: envio não confirmado'}[x.estado]||x.estado)}</td><td>${h(s.formatar(x.atualizado_em))}</td></tr>`).join('')||'<tr><td colspan="3">Nenhum envio registrado.</td></tr>'}</table></div></section>`});
+});
+r.get('/admin/edicoes/:id/album',carregarEdicao,(req,res)=>{
+ const e=req.edicao;
+ const fotos=db.prepare('SELECT * FROM album_fotos WHERE edicao_id=?').all(e.id);
+ tela(req,res,{titulo:'Álbum da edição',ativo:'/admin',corpo:`<a class="btn sec" href="/admin/edicoes/${e.id}">Voltar à edição</a><section class="cartao"><h2>${e.encerrada_em?'Nossa história está guardada':'Preparar a lembrança'}</h2><p>O PDF compartilhável inclui fotos, pares, estatísticas, histórico e recados escolhidos pelos participantes. Contatos, conversas privadas e dados de acesso ficam fora.</p>${e.encerrada_em?`<div class="acoes"><a class="btn" href="/admin/edicoes/${e.id}/album.pdf">Baixar álbum em PDF</a><a class="btn sec" href="/admin/edicoes/${e.id}/backup.zip">Baixar backup privado</a></div><p class="aviso info">O backup completo contém dados privados e a chave de restauração. Guarde-o com segurança; não envie ao grupo.</p>`:`<p>Os pares permanecem ocultos até você encerrar. Faça isso somente depois da troca de presentes.</p><form method="post" action="/admin/edicoes/${e.id}/encerrar"><label>Mensagem para a capa</label><textarea name="recado" maxlength="600" placeholder="O melhor presente foi estarmos juntos."></textarea><label>Digite ENCERRAR para publicar os pares no álbum e no histórico</label><input name="confirma" required pattern="ENCERRAR"><button class="btn" ${e.status==='sorteada'?'':'disabled'}>Encerrar edição e gerar álbum</button></form>`}</section><section class="cartao"><h2>Fotos do encontro</h2><p>Inclua fotos que a família quer guardar no álbum. JPG ou PNG, até 8 MB; máximo de 30 fotos.</p><form method="post" enctype="multipart/form-data" action="/admin/edicoes/${e.id}/album/foto"><label>Foto</label><input type="file" name="foto" accept="image/jpeg,image/png" required><label>Legenda</label><input name="legenda" maxlength="160"><button class="btn sec">Adicionar foto</button></form>${fotos.map(f=>`<p>${h(f.legenda||'Foto do encontro')}<form method="post" action="/admin/edicoes/${e.id}/album/foto/${f.id}/remover"><button class="btn sec mini">Remover do álbum</button></form></p>`).join('')}</section>${e.encerrada_em?album.previa(album.dados(e)):''}`});
+});
+r.post('/admin/edicoes/:id/encerrar',carregarEdicao,(req,res)=>{
+ if(req.body.confirma!=='ENCERRAR') return volta(res,`/admin/edicoes/${req.edicao.id}/album`,'Digite ENCERRAR.',true);
+ try {album.encerrar(req.edicao,req.body.recado);const e=s.q.edicao.get(req.edicao.id);for(const p of db.prepare("SELECT id FROM participacoes WHERE edicao_id=? AND status='confirmado'").all(e.id)) email.aviso(s.q.participacao.get(p.id),e,'encerramento');void email.processar();volta(res,`/admin/edicoes/${e.id}/album`,'Edição encerrada. Confira a prévia antes de baixar.');} catch(err){volta(res,`/admin/edicoes/${req.edicao.id}/album`,err.message,true);}
+});
+r.get('/admin/edicoes/:id/album.pdf',carregarEdicao,(req,res)=>{
+ if(!req.edicao.encerrada_em) return res.status(403).send('Encerre a edição primeiro.');
+ res.type('pdf').attachment(`album-amigo-oculto-${req.edicao.ano}.pdf`);album.pdf(album.dados(req.edicao),res);
+});
+r.get('/admin/edicoes/:id/backup.zip',carregarEdicao,async(req,res,next)=>{
+ if(!req.edicao.encerrada_em) return res.status(403).send('Encerre a edição primeiro.');
+ res.type('zip').attachment(`backup-privado-amigo-oculto-${req.edicao.ano}.zip`);
+ try {await album.backup(res);} catch(err){next(err);}
+});
+r.post('/admin/edicoes/:id/album/foto',carregarEdicao,upload.single('foto'),(req,res)=>{
+ const fs=require('fs'),path=require('path');const {DATA_DIR}=require('./db');const {tipoPorAssinatura}=require('./fotos');
+ const ext=req.file&&tipoPorAssinatura(req.file.buffer);
+ if(!['jpg','png'].includes(ext)) return volta(res,req.path.replace('/foto',''),'Use uma foto JPG ou PNG.',true);
+ if(db.prepare('SELECT COUNT(*) n FROM album_fotos WHERE edicao_id=?').get(req.edicao.id).n>=30) return volta(res,req.path.replace('/foto',''),'Limite de 30 fotos atingido.',true);
+ const arquivo=crypto.randomBytes(16).toString('hex')+'.'+ext;
+ fs.writeFileSync(path.join(DATA_DIR,'fotos',arquivo),req.file.buffer);
+ db.prepare('INSERT INTO album_fotos (edicao_id,arquivo,legenda) VALUES (?,?,?)').run(req.edicao.id,arquivo,limpar(req.body.legenda,160));volta(res,`/admin/edicoes/${req.edicao.id}/album`,'Foto incluída.');
+});
+r.post('/admin/edicoes/:id/album/foto/:foto/remover',carregarEdicao,(req,res)=>{
+ const foto=db.prepare('SELECT * FROM album_fotos WHERE id=? AND edicao_id=?').get(req.params.foto,req.edicao.id);
+ if(foto){db.prepare('DELETE FROM album_fotos WHERE id=?').run(foto.id);const arquivo=album.imagem(foto.arquivo);if(arquivo) require('fs').rmSync(arquivo,{force:true});}
+ volta(res,`/admin/edicoes/${req.edicao.id}/album`,'Foto removida do álbum.');
 });
 
 module.exports = r;

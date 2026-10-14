@@ -4,6 +4,8 @@ const { db, log } = require('./db');
 const seg = require('./seguranca');
 const recuperacao = require('./recuperacao');
 const social = require('./interacoes');
+const sessoes = require('./sessoes');
+const email = require('./email');
 const s = require('./servico');
 const { upload, salvarFoto } = require('./fotos');
 const { h, pagina, avatar, aviso } = require('./layout');
@@ -35,9 +37,12 @@ function campoAcesso(req, identificador) {
 function protegerAlteracao(req, res, next) {
   if (!req.part.pin_hash) return next();
   const sessao = social.sessaoParticipante(req);
-  if (sessao && (req.body?.csrf || req.get('X-CSRF-Token')) === sessao.csrf) return next();
+  if (sessao) {
+    if ((req.body?.csrf || req.get('X-CSRF-Token')) !== sessao.csrf) return res.status(403).send('Atualize a página e tente novamente.');
+    return next();
+  }
   const erro = recuperacao.validar(req.part, req.body?.pin_atual || req.get('X-Participant-PIN'), 'pin');
-  if (!erro) return next();
+  if (!erro) { sessoes.criar(res, req.part); return next(); }
   if (req.path.endsWith('/foto')) return res.status(403).json({ ok: false, erro });
   return voltar(res, req.part.token, erro, true);
 }
@@ -70,7 +75,12 @@ r.get('/c/:token', carregar, (req, res) => {
     return `${s.reais(mn)} a ${s.reais(mx)}`;
   })();
 
+  const conectado = sessoes.ler(req);
+  if (p.pin_hash && !conectado) return res.send(pagina({titulo: e.nome, experiencia:'convite', corpo:`${aviso(req)}<section class="cartao"><h2>Olá, ${h(primeiroNome)}!</h2><p>Entre uma vez para cuidar do seu perfil, conversar e abrir sua raspadinha.</p><form method="post" action="/c/${h(p.token)}/entrar"><label>Seu PIN</label><input type="password" name="pin" pattern="[0-9]{4,6}" inputmode="numeric" maxlength="6" required autocomplete="current-password"><button class="btn">Entrar</button></form><a class="btn sec" href="/c/${h(p.token)}/esqueci-pin">Esqueci meu PIN</a></section>`}));
   let corpo = aviso(req);
+  if(conectado) corpo += `<section class="cartao"><p>Você está conectado como <b>${h(p.nome)}</b>. Seu acesso dura até 24 horas.</p><form method="post" action="/c/${h(p.token)}/sair">${campoAcesso(req,'sair')}<button class="btn sec mini">Sair deste perfil</button></form></section>`;
+  if(e.encerrada_em) corpo += `<section class="cartao"><h2>Essa roda virou lembrança!</h2><a class="btn" href="/c/${h(p.token)}/album">Ver álbum da edição</a></section>`;
+
 
 
   corpo += `
@@ -95,11 +105,11 @@ r.get('/c/:token', carregar, (req, res) => {
   if (sorteada) {
     if (participouDoSorteio && p.pin_hash) {
       corpo += `
-      <section class="cartao" id="raspadinha" data-token="${h(p.token)}">
+      <section class="cartao" id="raspadinha" data-token="${h(p.token)}" data-csrf="${h(conectado?.csrf || '')}">
         <h2>🎁 O sorteio foi realizado!</h2>
-        <p>Digite o PIN que ${responsavel ? 'foi criado para ' + h(primeiroNome) : 'você criou'} na confirmação e raspe a tela para descobrir ${responsavel ? 'o amigo oculto' : 'seu amigo oculto'}.</p>
+        <p>Seu acesso já está confirmado. Abra e raspe a tela para descobrir seu amigo oculto.</p>
         <form id="form-pin" class="acoes" autocomplete="off">
-          <input type="password" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" name="pin" placeholder="PIN" required style="max-width:160px">
+
           <button class="btn" type="submit">Abrir raspadinha</button>
         </form>
         <div id="pin-erro" class="aviso erro" hidden></div>
@@ -111,8 +121,7 @@ r.get('/c/:token', carregar, (req, res) => {
         </div>
       </section>`;
     } else if (participouDoSorteio && !p.pin_hash) {
-      corpo += `<section class="cartao"><h2>PIN indisponível</h2><p>Se você guardou seu código pessoal, use-o para recuperar o PIN. Se não tiver o código, fale com o organizador para avaliar a anulação e um novo sorteio.</p>
-      <form method="post" action="/c/${h(p.token)}/recuperar-pin"><label>Código de recuperação</label><input type="password" name="codigo" required maxlength="24">${camposPin()}<button class="btn">Recuperar PIN</button></form></section>`;
+      corpo += `<section class="cartao"><h2>PIN indisponível</h2><p>Fale com o organizador para conferir seu acesso.</p></section>`;
     } else {
       corpo += `<section class="cartao"><h2>O sorteio foi realizado</h2>
         <p>${p.status === 'recusado' ? 'A participação foi recusada nesta edição.' : 'A confirmação não chegou dentro do prazo, por isso este cadastro ficou fora do sorteio.'} Fale com o organizador se houver algum engano.</p></section>`;
@@ -145,8 +154,8 @@ r.get('/c/:token', carregar, (req, res) => {
               <label><input type="radio" name="resposta" value="recusado" ${p.status === 'recusado' ? 'checked' : ''}><span class="op nao">Não vou</span></label>
             </div>
             ${p.pin_hash
-              ? `<p class="muted pequeno">PIN já criado. Ele será pedido para abrir a raspadinha.</p>`
-              : `<p class="muted pequeno" style="margin-top:14px">Crie um PIN de 4 a 6 números. Ele será pedido para abrir a raspadinha e protege o resultado de ${responsavel ? 'vocês' : 'você'} (nem o organizador o conhece).</p>${camposPin(false)}`}
+              ? `<p class="muted pequeno">PIN já criado. Enquanto estiver conectado, não será pedido novamente.</p>`
+              : `<p class="muted pequeno" style="margin-top:14px">Crie um PIN de 4 a 6 números. Ele protege seu acesso e o resultado de ${responsavel ? 'vocês' : 'você'} (nem o organizador o conhece).</p>${camposPin(false)}`}
             <div class="acoes"><button class="btn">Enviar resposta</button></div>
           </form>`}
     </section>`;
@@ -231,18 +240,8 @@ r.get('/c/:token', carregar, (req, res) => {
   }
 
   if (p.pin_hash) {
-    corpo += `<section class="cartao"><details><summary>Guardar ou recuperar seu PIN</summary>
-      <p>Se esquecer o PIN, use seu código pessoal para criar outro. Guarde o código fora deste site; o organizador não o recebe.</p>
-      <form method="post" action="/c/${h(p.token)}/recuperar-pin">
-        <label>Código de recuperação</label><input type="password" name="codigo" required maxlength="24" autocomplete="off">
-        ${camposPin(true, 'recuperar-')}<button class="btn sec">Criar outro PIN</button>
-      </form>
-      <p>Se você ainda sabe o PIN, pode gerar um novo código de recuperação. O código anterior deixará de funcionar.</p>
-      <form method="post" action="/c/${h(p.token)}/codigo-recuperacao">
-        <label>PIN atual</label><input type="password" name="pin_atual" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" required>
-        <button class="btn sec">Gerar código de recuperação</button>
-      </form>
-    </details></section>`;
+    const c=email.contato(p);
+    corpo += `<section class="cartao"><h2>Seu e-mail, seu acesso</h2><p>${c?.email_verificado===c?.email && c?.email ? 'E-mail verificado. Você poderá recuperar o PIN por ele.' : 'Verifique seu e-mail para recuperar o PIN sem guardar códigos.'}</p>${!email.configurado()?'<p class="aviso info">O organizador ainda precisa configurar o envio de e-mails.</p>':''}<form method="post" action="/c/${h(p.token)}/verificar-email">${campoAcesso(req,'email')}<button class="btn sec" ${email.configurado()?'':'disabled'}>Enviar link de verificação</button></form><p class="muted pequeno">Ao verificar, você aceita receber confirmações, avisos do sorteio e lembretes. Para crianças, usamos o e-mail do responsável.</p></section>`;
   }
   res.send(pagina({
     titulo: e.nome, selo: e.grupo_nome, corpo, experiencia: 'convite',
@@ -263,29 +262,46 @@ function validarPin(pin, pin2) {
   return null;
 }
 
-function mostrarCodigo(res, p, codigo, mensagem) {
-  res.send(pagina({ titulo: 'Guarde seu código de recuperação', corpo: `<section class="cartao"><p>${h(mensagem)}</p><p>Salve este código em um lugar seguro. Você precisará dele se esquecer o PIN. Ele só aparece agora e não é enviado ao organizador.</p><pre data-recuperacao="${h(codigo)}" style="white-space:pre-wrap;word-break:break-all">${h(codigo)}</pre><p>Quem tiver seu link e este código poderá redefinir seu PIN. Não os compartilhe.</p><a class="btn" href="/c/${h(p.token)}">Já guardei, continuar</a></section>` }));
-}
-
-r.post('/c/:token/codigo-recuperacao', carregar, (req, res) => {
-  const p = req.part;
-  const erro = recuperacao.validar(p, req.body?.pin_atual, 'pin');
-  if (erro) return voltar(res, p.token, erro, true);
-  const novo = recuperacao.novoCodigo();
-  db.prepare('UPDATE participacoes SET pin_recuperacao_hash = ? WHERE id = ?').run(novo.hash, p.id);
-  mostrarCodigo(res, p, novo.codigo, 'Seu novo código de recuperação está pronto.');
+r.post('/c/:token/entrar',carregar,(req,res)=>{
+ const erro=recuperacao.validar(req.part,req.body.pin,'pin');
+ if(erro) return voltar(res,req.part.token,erro,true);
+ sessoes.criar(res,req.part); voltar(res,req.part.token,'Você está conectado!');
 });
-
-r.post('/c/:token/recuperar-pin', carregar, (req, res) => {
-  const p = req.part;
-  const erroPin = validarPin(req.body.pin, req.body.pin2);
-  if (erroPin) return voltar(res, p.token, erroPin, true);
-  const erro = recuperacao.validar(p, req.body.codigo);
-  if (erro) return voltar(res, p.token, erro, true);
-  const novo = recuperacao.novoCodigo();
-  db.prepare('UPDATE participacoes SET pin_hash = ?, pin_recuperacao_hash = ?, pin_redefinido_em = ? WHERE id = ?').run(seg.hashPin(req.body.pin), novo.hash, s.agoraISO(), p.id);
-  log(p.edicao_id, `${p.nome}: recuperou o PIN com seu código pessoal.`);
-  mostrarCodigo(res, p, novo.codigo, 'PIN atualizado. Guarde este novo código; o anterior deixou de funcionar.');
+r.post('/c/:token/sair',carregar,(req,res)=>{
+ const sessao=sessoes.ler(req);
+ if(!sessao || req.body.csrf!==sessao.csrf) return res.status(403).send('Atualize a página.');
+ sessoes.sair(res,req.part,sessao); voltar(res,req.part.token,'Você saiu deste perfil.');
+});
+r.get('/c/:token/esqueci-pin',carregar,(req,res)=>res.send(pagina({titulo:'Recuperar PIN',corpo:`${aviso(req)}<section class="cartao"><h2>Esqueceu seu PIN?</h2><p>Enviamos um link de 30 minutos ao e-mail verificado do seu perfil ou responsável.</p>${!email.configurado()?'<p class="aviso info">O envio de e-mails ainda não foi configurado. Fale com o organizador.</p>':''}<form method="post" action="/c/${h(req.part.token)}/esqueci-pin"><button class="btn" ${email.configurado()?'':'disabled'}>Enviar link de recuperação</button></form><a class="btn sec" href="/c/${h(req.part.token)}">Voltar</a></section>`})));
+r.post('/c/:token/esqueci-pin',carregar,(req,res)=>{
+ try { email.criarLink(req.part,'recuperar'); void email.processar(); voltar(res,req.part.token,'Link de recuperação solicitado. Confira seu e-mail e a pasta de spam.'); }
+ catch(err) { voltar(res,req.part.token,err.message,true); }
+});
+r.post('/c/:token/verificar-email',carregar,protegerAlteracao,(req,res)=>{
+ try { email.criarLink(req.part,'verificar'); void email.processar(); voltar(res,req.part.token,'Link de verificação solicitado. Confira seu e-mail.'); }
+ catch(err) { voltar(res,req.part.token,err.message,true); }
+});
+r.get('/c/:token/email/:chave',carregar,(req,res)=>{
+ const l=email.lerLink(req.part,req.params.chave);
+ if(!l) return res.status(400).send(pagina({titulo:'Link expirado',corpo:'<section class="cartao"><p>Este link expirou ou já foi usado. Solicite outro no aplicativo.</p></section>'}));
+ res.send(pagina({titulo:l.tipo==='recuperar'?'Criar outro PIN':'Verificar e-mail',corpo:`${aviso(req)}<section class="cartao"><p>${l.tipo==='recuperar'?'Escolha seu novo PIN.':'Confirme que este é seu e-mail.'}</p><form method="post" action="/c/${h(req.part.token)}/email/${h(req.params.chave)}">${l.tipo==='recuperar'?camposPin():''}<button class="btn">${l.tipo==='recuperar'?'Salvar novo PIN':'Confirmar meu e-mail'}</button></form></section>`}));
+});
+r.post('/c/:token/email/:chave',carregar,(req,res)=>{
+ const p=req.part,l=email.lerLink(p,req.params.chave);
+ if(!l) return res.status(400).send('Link expirado ou já usado. Solicite outro.');
+ if(l.tipo==='recuperar') { const erro=validarPin(req.body.pin,req.body.pin2); if(erro) return res.redirect(303,req.path+'?erro='+encodeURIComponent(erro)); }
+ db.transaction(()=>{
+  db.prepare('UPDATE links_email SET usado_em=? WHERE hash=?').run(s.agoraISO(),l.hash);
+  if(l.tipo==='verificar') db.prepare('UPDATE pessoas SET email_verificado=? WHERE id=?').run(l.destino,email.contato(p).id);
+  else {
+   db.prepare('UPDATE participacoes SET pin_hash=?,pin_recuperacao_hash=NULL,pin_tentativas=0,pin_bloqueio_ate=NULL,pin_redefinido_em=? WHERE id=?').run(seg.hashPin(req.body.pin),s.agoraISO(),p.id);
+   db.prepare('DELETE FROM sessoes_pessoas WHERE participacao_id=?').run(p.id);
+  }
+ })();
+ if(l.tipo==='recuperar') sessoes.criar(res,s.q.participacao.get(p.id));
+ else if(p.status==='confirmado') email.aviso(p,req.edicao,'confirmacao');
+ void email.processar();
+ voltar(res,p.token,l.tipo==='recuperar'?'PIN atualizado. Você está conectado!':'E-mail verificado!');
 });
 
 /* ------------------------------------------------------------------ */
@@ -295,32 +311,31 @@ r.post('/c/:token/confirmar', carregar, protegerAlteracao, (req, res) => {
   const resposta = req.body.resposta === 'confirmado' ? 'confirmado' : req.body.resposta === 'recusado' ? 'recusado' : null;
   if (!resposta) return voltar(res, p.token, 'Escolha uma opção.', true);
   let pinHash = p.pin_hash;
-  let codigoNovo = null;
+
   if (resposta === 'confirmado' && !pinHash) {
     const erro = validarPin(req.body.pin, req.body.pin2);
     if (erro) return voltar(res, p.token, erro, true);
     pinHash = seg.hashPin(req.body.pin);
-    codigoNovo = recuperacao.novoCodigo();
+
   }
   db.prepare('UPDATE participacoes SET status = ?, pin_hash = ?, respondido_em = ? WHERE id = ?')
     .run(resposta, pinHash, s.agoraISO(), p.id);
-  if (codigoNovo) db.prepare('UPDATE participacoes SET pin_recuperacao_hash = ? WHERE id = ?').run(codigoNovo.hash, p.id);
+  if (resposta === 'confirmado') { const atualizado=s.q.participacao.get(p.id); sessoes.criar(res, atualizado); email.aviso(atualizado,e,'confirmacao'); void email.processar(); }
   log(e.id, `${p.nome}: ${resposta === 'confirmado' ? 'confirmou' : 'recusou'} a participação.`);
-  if (codigoNovo) return mostrarCodigo(res, p, codigoNovo.codigo, 'Participação confirmada! Depois de guardar o código, preencha sua foto e sugestões.');
+
   voltar(res, p.token, resposta === 'confirmado' ? 'Participação confirmada! Agora capriche na foto e nas sugestões.' : 'Resposta registrada. Sentiremos sua falta!');
 });
 
 r.post('/c/:token/pin', carregar, (req, res) => {
   const p = req.part;
-  if (req.edicao.status === 'sorteada') return voltar(res, p.token, 'Depois do sorteio, use seu código pessoal para recuperar o PIN.', true);
+  if (req.edicao.status === 'sorteada') return voltar(res, p.token, 'Depois do sorteio, recupere o PIN pelo e-mail verificado.', true);
   if (p.pin_hash) return voltar(res, p.token, 'O PIN já está definido.', true);
   const erro = validarPin(req.body.pin, req.body.pin2);
   if (erro) return voltar(res, p.token, erro, true);
   db.prepare('UPDATE participacoes SET pin_hash = ?, pin_tentativas = 0, pin_bloqueio_ate = NULL WHERE id = ?').run(seg.hashPin(req.body.pin), p.id);
   log(p.edicao_id, `${p.nome}: criou novo PIN.`);
-  const novo = recuperacao.novoCodigo();
-  db.prepare('UPDATE participacoes SET pin_recuperacao_hash = ? WHERE id = ?').run(novo.hash, p.id);
-  mostrarCodigo(res, p, novo.codigo, 'PIN salvo.');
+  sessoes.criar(res,s.q.participacao.get(p.id));
+  voltar(res,p.token,'PIN salvo. Você está conectado!');
 });
 
 r.post('/c/:token/dados', carregar, protegerAlteracao, (req, res) => {
@@ -383,9 +398,37 @@ r.post('/c/:token/foto', carregar, protegerAlteracao, upload.single('foto'), (re
 });
 
 r.post('/c/:token/revelar', carregar, (req, res) => {
-  const resultado = s.revelar(req.part, req.body.pin);
+  const sessao=sessoes.ler(req);
+  if(sessao && req.body.csrf!==sessao.csrf) return res.status(403).json({erro:'Atualize a página.'});
+  const resultado = s.revelar(req.part, req.body.pin, !!sessao);
+  if(!resultado.erro && !sessao) sessoes.criar(res,req.part);
   if (resultado.erro) return res.status(400).json(resultado);
   res.json(resultado);
+});
+
+
+function exigirSessao(req,res,next) {
+ req.sessao=sessoes.ler(req);
+ if(!req.sessao) return res.redirect(303,`/c/${req.part.token}`);
+ if(req.method==='POST'&&req.body.csrf!==req.sessao.csrf) return res.status(403).send('Atualize a página.');
+ next();
+}
+r.get('/c/:token/album',carregar,exigirSessao,(req,res)=>{
+ const album=require('./album');const e=req.edicao;
+ if(!e.encerrada_em) return res.status(403).send('O álbum estará disponível após o encerramento.');
+ const recado=db.prepare('SELECT texto FROM album_recados WHERE participacao_id=?').get(req.part.id)?.texto||'';
+ res.send(pagina({titulo:'Álbum da nossa roda',experiencia:'convite',corpo:`${aviso(req)}<a class="btn sec" href="/c/${h(req.part.token)}">Voltar ao meu perfil</a><section class="cartao"><a class="btn" href="/c/${h(req.part.token)}/album.pdf">Baixar álbum em PDF</a><h2>Seu recado para o álbum</h2><p>Escreva apenas o que deseja compartilhar com toda a família no PDF. Deixe vazio para retirar seu recado.</p><form method="post" action="/c/${h(req.part.token)}/album/recado">${campoAcesso(req,'recado')}<textarea name="texto" maxlength="500">${h(recado)}</textarea><button class="btn sec">Salvar recado para a família</button></form></section>${album.previa(album.dados(e))}`}));
+});
+r.post('/c/:token/album/recado',carregar,exigirSessao,(req,res)=>{
+ if(!req.edicao.encerrada_em) return res.status(403).send('Aguarde o encerramento.');
+ const texto=limpar(req.body.texto,500);
+ if(texto) db.prepare('INSERT INTO album_recados (participacao_id,texto) VALUES (?,?) ON CONFLICT(participacao_id) DO UPDATE SET texto=excluded.texto').run(req.part.id,texto);
+ else db.prepare('DELETE FROM album_recados WHERE participacao_id=?').run(req.part.id);
+ res.redirect(303,`/c/${req.part.token}/album?ok=Recado%20salvo`);
+});
+r.get('/c/:token/album.pdf',carregar,exigirSessao,(req,res)=>{
+ if(!req.edicao.encerrada_em) return res.status(403).send('Aguarde o encerramento.');
+ const album=require('./album');res.type('pdf').attachment(`album-amigo-oculto-${req.edicao.ano}.pdf`);album.pdf(album.dados(req.edicao),res);
 });
 
 module.exports = r;

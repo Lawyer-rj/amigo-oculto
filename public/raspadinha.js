@@ -14,11 +14,12 @@
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     erro.hidden = true;
-    const pin = form.pin.value;
+    const pin = form.elements.pin?.value;
+    const csrf = sec.dataset.csrf;
     const r = await fetch(`/c/${token}/revelar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin }),
+      body: JSON.stringify({ pin, csrf }),
     });
     const j = await r.json();
     if (!r.ok || j.erro) {

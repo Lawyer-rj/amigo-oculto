@@ -167,6 +167,7 @@ function simular(edicaoId) {
 function executarSorteio(edicaoId, origem = 'organizador') {
   const e = q.edicao.get(edicaoId);
   if (!e) throw new Error('Edição não encontrada.');
+  if (e.encerrada_em) throw new Error('Esta edição já foi encerrada.');
   if (e.status === 'sorteada') throw new Error('Esta edição já foi sorteada.');
   const conf = confirmadosParaSorteio(edicaoId);
   if (conf.length < 3) throw new Error(`Apenas ${conf.length} participante(s) confirmado(s); são necessários 3.`);
@@ -192,6 +193,7 @@ function executarSorteio(edicaoId, origem = 'organizador') {
 }
 
 function anularSorteio(edicaoId) {
+  if(q.edicao.get(edicaoId)?.encerrada_em) throw new Error('Edição encerrada: o histórico está preservado.');
   db.transaction(() => {
     db.prepare('DELETE FROM pares WHERE edicao_id = ?').run(edicaoId);
     db.prepare(`UPDATE edicoes SET status = 'aberta', sorteio_em = NULL, sorteado_em = NULL, sorteio_versao = NULL, repeticoes = NULL, quem_comeca_id = NULL, ultimo_erro = NULL WHERE id = ?`).run(edicaoId);
@@ -212,13 +214,13 @@ function sortearQuemComeca(edicaoId) {
 }
 
 /** Resultado de um participante: só depois do sorteio e com o PIN correto. */
-function revelar(participacao, pin) {
+function revelar(participacao, pin, autenticado = false) {
   const e = q.edicao.get(participacao.edicao_id);
   if (e.status !== 'sorteada') return { erro: 'O sorteio ainda não foi realizado.' };
-  if (participacao.pin_bloqueio_ate && new Date(participacao.pin_bloqueio_ate) > new Date()) {
+  if (!autenticado && participacao.pin_bloqueio_ate && new Date(participacao.pin_bloqueio_ate) > new Date()) {
     return { erro: 'Muitas tentativas. Aguarde 15 minutos e tente de novo.' };
   }
-  if (!seg.confereHash(String(pin || ''), participacao.pin_hash)) {
+  if (!autenticado && !seg.confereHash(String(pin || ''), participacao.pin_hash)) {
     const t = participacao.pin_tentativas + 1;
     const bloqueio = t >= 5 ? new Date(Date.now() + 15 * 60e3).toISOString() : null;
     db.prepare('UPDATE participacoes SET pin_tentativas = ?, pin_bloqueio_ate = ? WHERE id = ?')
@@ -259,6 +261,10 @@ function verificarAgendados() {
   }
 }
 function iniciarAgendador() {
+  const email=require('./email');
+  const verificarEmail=()=>{try {email.lembretes(); void email.processar();} catch {console.error('Não foi possível preparar os avisos de e-mail.');}};
+  setTimeout(verificarEmail,5000).unref();
+  setInterval(verificarEmail,60000).unref();
   setTimeout(verificarAgendados, 3000);
   setInterval(verificarAgendados, 60_000).unref();
 }

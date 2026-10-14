@@ -34,4 +34,4 @@ function salvarFoto(pessoaId, arquivo) {
   return nome;
 }
 
-module.exports = { upload, salvarFoto, PASTA };
+module.exports = { upload, salvarFoto, tipoPorAssinatura, PASTA };

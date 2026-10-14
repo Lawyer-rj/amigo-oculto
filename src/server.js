@@ -27,6 +27,12 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req,res,next)=>{
+  const origin=req.get('Origin');
+  if(req.method==='POST' && origin && origin!==new URL(process.env.BASE_URL || 'http://localhost:3000').origin && origin!==`${req.protocol}://${req.get('host')}`) return res.status(403).send('A solicitação deve ser feita dentro do aplicativo.');
+  next();
+});
+
 app.use(express.urlencoded({ extended: false, limit: '50kb' }));
 app.use(express.json({ limit: '10kb' }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h' }));
