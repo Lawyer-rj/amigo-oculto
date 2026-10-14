@@ -88,6 +88,13 @@ test('sessão única, recuperação por e-mail e encerramento com álbum',async 
   await t.test('formulário de outro site é recusado',async()=>{
    const r=await fetch(base+'/c/ana/dados',{method:'POST',redirect:'manual',headers:{Origin:'https://outro.example.com','Content-Type':'application/x-www-form-urlencoded',cookie},body:new URLSearchParams({nome:'Invasor',csrf})});assert.equal(r.status,403);
   });
+  await t.test('formulário interno preserva origem e permite marcar compra pelo túnel',async()=>{
+   const pagina=await get('/c/ana/interacoes',cookie);
+   assert.equal(pagina.headers.get('referrer-policy'),'same-origin');
+   const response=await fetch(base+'/c/ana/interacoes/compra',{method:'POST',redirect:'manual',headers:{Origin:'http://localhost:3000','Content-Type':'application/x-www-form-urlencoded',cookie},body:new URLSearchParams({csrf,comprado:'1'})});
+   assert.equal(response.status,303);
+   assert.ok(db.prepare('SELECT presente_comprado_em FROM participacoes WHERE id=1').get().presente_comprado_em);
+  });
   await t.test('sair revoga acesso em todas as áreas',async()=>{
    assert.equal((await post('/c/ana/sair',{csrf},cookie)).status,303);
    const html=await (await get('/c/ana',cookie)).text();assert.match(html,/Esqueci meu PIN/);assert.doesNotMatch(html,/raspa-premio/);

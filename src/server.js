@@ -11,8 +11,8 @@ app.set('trust proxy', 1);
 app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  // Os links pessoais trazem o token na URL: nunca enviá-los como "referer" a lojas externas.
-  res.setHeader('Referrer-Policy', 'no-referrer');
+  // Mantém a origem nos formulários internos, sem enviar links pessoais a sites externos.
+  res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
     "img-src 'self' data: blob:",
