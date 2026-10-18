@@ -11,3 +11,6 @@ scripts/definir-valor.js
 scripts/participantes.json
 
 certificados
+
+# Arquivos privados e backups locais
+/arquivo-local/
