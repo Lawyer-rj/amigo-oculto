@@ -104,7 +104,7 @@ r.get('/c/:token/interacoes', carregar, (req, res) => {
     <h3>${c ? h(tituloConversa(c, p)) : 'Mural da família'}</h3>${c?.tipo === 'anonima' ? '<p class="aviso info">Use esta conversa para perguntar sobre o presente. Evite assinar a mensagem ou dar pistas sobre sua identidade.</p>' : '<p class="muted pequeno">Aqui seu nome aparece nas mensagens.</p>'}
     <div id="social-mensagens" class="social-mensagens">${msgs.map((m) => `<article class="social-mensagem"><b>${h(m.autor)}</b><time>${h(s.formatar(m.em))}</time><p>${h(m.texto)}</p>${m.minha ? `<form method="post" action="${base(p)}/apagar">${hidden(req)}<input type="hidden" name="mensagem" value="${m.id}"><input type="hidden" name="conversa" value="${c?.id || ''}"><button class="btn sec mini">Apagar minha mensagem</button></form>` : ''}</article>`).join('') || '<p class="muted">Nenhuma mensagem ainda. Comece a conversa!</p>'}</div>
     <form method="post" action="${base(p)}/mensagem">${hidden(req)}<input type="hidden" name="conversa" value="${c?.id || ''}"><label for="texto-social">Sua mensagem</label><textarea id="texto-social" name="texto" maxlength="1000" required rows="3"></textarea><button class="btn">Enviar mensagem</button></form>
-    <p id="social-status" class="muted pequeno" role="status">Atualização a cada 10 segundos enquanto esta página estiver aberta. São exibidas as últimas 100 mensagens.</p>
+    <p id="social-status" class="muted pequeno" role="status">Atualização a cada 10 segundos enquanto esta página estiver aberta. São exibidas as últimas 100 mensagens. Avisos privados são enviados ao e-mail verificado; conversas identificadas permitem responder por e-mail.</p>
   </section><div id="social-config" data-estado="${base(p)}/estado${c ? `?conversa=${c.id}` : ''}" data-base="${base(p)}" data-conversa="${c?.id || ''}" data-csrf="${req.sessao.csrf}"></div>`;
   res.send(pagina({ titulo: 'A brincadeira continua', selo: e.nome, experiencia: 'social', largo: true, corpo, scripts: ['/interacoes.js'] }));
 });
@@ -157,6 +157,8 @@ r.post('/c/:token/interacoes/mensagem', (req, res) => {
   const conteudo = JSON.stringify({ autor: req.part.id, texto: req.body.texto.trim() });
   db.prepare('INSERT INTO mensagens_interacao (id, edicao_id, conversa_id, conteudo_cifrado, criado_em) VALUES (?, ?, ?, ?, ?)')
     .run(id, req.edicao.id, c?.id || null, seg.cifrar(conteudo, `mensagem:${id}`), s.agoraISO());
+  if(c) require('./email-conversas').notificar(c,req.part.id,id,req.body.texto.trim());
+  void require('./email').processar();
   redirect(req, res, 'Mensagem enviada.', false, c?.id);
 });
 r.post('/c/:token/interacoes/apagar', (req, res) => {

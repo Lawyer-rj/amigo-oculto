@@ -34,6 +34,7 @@ test('sessão única, recuperação por e-mail e encerramento com álbum',async 
    assert.equal((await post('/c/ana/email/'+chave)).status,400);
    await email.processar();
    s.executarSorteio(1);email.lembretes();await email.processar();
+   const perfil=await (await get('/c/ana',cookie)).text();assert.match(perfil,/id="email"/);assert.match(perfil,/Escolher foto/);assert.match(perfil,/convite.js/);
    const resultado=envios.find(m=>m.subject.includes('raspadinha'));assert.ok(resultado);assert.doesNotMatch(resultado.text,/Bruno|Clara/);
    const r=await post('/c/ana/revelar',{csrf},cookie);assert.equal(r.status,200);assert.ok((await r.json()).nome);
    assert.equal((await post('/c/ana/revelar',{csrf:'errado'},cookie)).status,403);

@@ -262,7 +262,7 @@ function verificarAgendados() {
 }
 function iniciarAgendador() {
   const email=require('./email');
-  const verificarEmail=()=>{try {email.lembretes(); void email.processar();} catch {console.error('Não foi possível preparar os avisos de e-mail.');}};
+  const verificarEmail=()=>{try {email.lembretes(); void email.processar(); void require('./email-conversas').receber().then(()=>email.processar());} catch {console.error('Não foi possível preparar os avisos de e-mail.');}};
   setTimeout(verificarEmail,5000).unref();
   setInterval(verificarEmail,60000).unref();
   setTimeout(verificarAgendados, 3000);

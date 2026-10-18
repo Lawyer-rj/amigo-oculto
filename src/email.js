@@ -16,9 +16,9 @@ function base() {
 function contato(p) {
  return db.prepare('SELECT * FROM pessoas WHERE id=?').get(p.responsavel_id || p.pessoa_id);
 }
-function enfileirar(id, p, destino, assunto, texto) {
+function enfileirar(id, p, destino, assunto, texto, opcoes = {}) {
  if (!configurado() || !valido(destino)) return false;
- const conteudo = seg.cifrar(JSON.stringify({destino, assunto, texto}), `email:${id}`);
+ const conteudo = seg.cifrar(JSON.stringify({destino, assunto, texto, ...opcoes}), `email:${id}`);
  return !!db.prepare('INSERT OR IGNORE INTO fila_email (id,participacao_id,conteudo,criado_em,atualizado_em) VALUES (?,?,?,?,?)').run(id,p.id,conteudo,agora(),agora()).changes;
 }
 function criarLink(p,tipo) {
@@ -59,9 +59,11 @@ async function processar() {
  try {
   for(const item of db.prepare("SELECT * FROM fila_email WHERE estado='pendente' ORDER BY criado_em LIMIT 10").all()) {
    const m=JSON.parse(seg.decifrar(item.conteudo,`email:${item.id}`));
+   if(m.mensagem && !db.prepare('SELECT 1 FROM mensagens_interacao WHERE id=? AND conversa_id=?').get(m.mensagem,m.conversa)) { db.prepare("UPDATE fila_email SET estado='cancelado' WHERE id=?").run(item.id); continue; }
+   if(m.pessoa) { const pessoa=require('./servico').q.participacao.get(m.pessoa),c=pessoa&&contato(pessoa); if(!c||c.email!==m.destino||c.email_verificado!==c.email){db.prepare("UPDATE fila_email SET estado='cancelado' WHERE id=?").run(item.id);continue;} }
    db.prepare("UPDATE fila_email SET estado='enviando',atualizado_em=? WHERE id=?").run(agora(),item.id);
    try {
-    await smtp.sendMail({from:process.env.EMAIL_REMETENTE,to:m.destino,subject:m.assunto,text:m.texto,messageId:`<${item.id}@${process.env.EMAIL_REMETENTE.split('@')[1]}>`});
+    await smtp.sendMail({from:process.env.EMAIL_REMETENTE,to:m.destino,subject:m.assunto,text:m.texto,...(m.replyTo?{replyTo:m.replyTo}:{}),headers:{'X-Auto-Response-Suppress':'All'},messageId:`<${item.id}@${process.env.EMAIL_REMETENTE.split('@')[1]}>`});
     db.prepare("UPDATE fila_email SET estado='aceito',atualizado_em=? WHERE id=?").run(agora(),item.id);
    } catch { db.prepare("UPDATE fila_email SET estado='incerto',atualizado_em=? WHERE id=?").run(agora(),item.id); }
   }

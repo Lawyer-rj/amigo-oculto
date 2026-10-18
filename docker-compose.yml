@@ -12,6 +12,8 @@ services:
       - "127.0.0.1:${PORTA_LOCAL:-3000}:3000"
     volumes:
       - dados:/data
+      # Autoridade local opcional (antivírus), somente certificado público.
+      - ./certificados:/run/certificados:ro
 
 volumes:
   dados:

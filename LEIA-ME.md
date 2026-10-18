@@ -168,3 +168,13 @@ Depois de cadastrar seu endereço, o participante clica em Enviar link de verifi
 No final da troca, abra Edições > Álbum e lembranças > Preparar álbum. Inclua fotos JPG/PNG, uma mensagem para a capa e digite ENCERRAR. Isto publica os pares no histórico; não pode anular esse sorteio depois. Revise a prévia e baixe o PDF. Participantes conectados também podem baixar e incluir/remover seus próprios recados compartilháveis. Mensagens privadas, contatos, tokens e PINs ficam fora do PDF. Fotos WEBP de perfil aparecem na prévia; no PDF há o nome como alternativa, pois o gerador aceita JPG/PNG.
 
 O backup ZIP é privado, acessível só ao organizador. Inclui TODAS as edições, SQLite consistente, fotos e APP_SECRET para restaurar conversas e pares cifrados. Não compartilhe no grupo. Configure novamente senha de organizador, endereço público e SMTP ao restaurar. O backup é criado sob demanda; não ocorre cópia automática para serviço externo.
+
+
+## Mensagens privadas por e-mail
+Com e-mail verificado, novas mensagens privadas geram avisos individuais. Conversas identificadas incluem o texto; com RESPOSTAS_POR_EMAIL=habilitado, responder pelo mesmo endereço salva o texto no aplicativo. A leitura do Gmail (INBOX, somente leitura) ocorre a cada minuto via IMAP TLS usando SMTP_USER/SMTP_PASS. Não move, apaga ou marca e-mails como lidos. Conversas anônimas nunca incluem conteúdo ou autoria no e-mail e só permitem responder no aplicativo.
+
+Endereços de resposta aleatórios expiram em 14 dias e são invalidados por troca de PIN, endereço ou exclusão da mensagem original. Remetente deve ser verificado e autenticado pelo Gmail com DMARC aprovado. Respostas automáticas, duplicadas e textos acima de 1.000 caracteres não são importados. Anexos não são salvos; mensagens acima de 128 KB são ignoradas. O processamento não revela e-mails pessoais à outra pessoa. As cópias de e-mail permanecem nas caixas mesmo se a mensagem for apagada no app.
+
+Nesta máquina, a conexão IMAP é inspecionada pelo Kaspersky. Após autorização do organizador, o certificado público correspondente à raiz confiável do Windows fica em certificados/raiz-local.pem, montado somente para leitura. NODE_EXTRA_CA_CERTS aponta para ele; a validação TLS continua ativa. Certificados locais não são publicados no Git. Em outra máquina/VPS, remova essa variável se não houver essa inspeção.
+
+Para validar respostas reais, use dois endereços de participantes: mensagens da própria conta remetente para ela mesma podem não trazer os resultados de autenticação exigidos e são recusadas. Confira avisos privados e respostas em um e-mail verificado diferente do remetente.

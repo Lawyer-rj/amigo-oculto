@@ -51,7 +51,7 @@
         document.getElementById('social-conversas').replaceChildren(...itens);
         ultimasConversas = conversasVersao;
       }
-      status.textContent = 'Conversas e compras atualizadas. Acompanhe por aqui; não há avisos externos.';
+      status.textContent = 'Conversas e compras atualizadas. Avisos privados vão para o e-mail verificado; mensagens anônimas são lidas no aplicativo.';
     } catch {
       status.textContent = 'Conexão interrompida. Suas mensagens escritas continuam aqui; tentaremos atualizar novamente.';
     } finally { ocupado = false; }

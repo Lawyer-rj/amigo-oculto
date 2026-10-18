@@ -76,7 +76,7 @@ r.get('/c/:token', carregar, (req, res) => {
   })();
 
   const conectado = sessoes.ler(req);
-  if (p.pin_hash && !conectado) return res.send(pagina({titulo: e.nome, experiencia:'convite', corpo:`${aviso(req)}<section class="cartao"><h2>Olá, ${h(primeiroNome)}!</h2><p>Entre uma vez para cuidar do seu perfil, conversar e abrir sua raspadinha.</p><form method="post" action="/c/${h(p.token)}/entrar"><label>Seu PIN</label><input type="password" name="pin" pattern="[0-9]{4,6}" inputmode="numeric" maxlength="6" required autocomplete="current-password"><button class="btn">Entrar</button></form><a class="btn sec" href="/c/${h(p.token)}/esqueci-pin">Esqueci meu PIN</a></section>`}));
+  if (p.pin_hash && !conectado) return res.send(pagina({titulo: e.nome, experiencia:'convite', corpo:`${aviso(req)}<section class="cartao"><h2>Olá, ${h(primeiroNome)}!</h2><p>Entre uma vez para cuidar do seu perfil, conversar e abrir sua raspadinha.</p><form class="acesso-participante" method="post" action="/c/${h(p.token)}/entrar"><label>Seu PIN</label><input type="password" name="pin" pattern="[0-9]{4,6}" inputmode="numeric" maxlength="6" required autocomplete="current-password"><div class="acesso-acoes"><button class="btn">Entrar</button><a class="btn sec" href="/c/${h(p.token)}/esqueci-pin">Esqueci meu PIN</a></div></form></section>`}));
   let corpo = aviso(req);
   if(conectado) corpo += `<section class="cartao"><p>Você está conectado como <b>${h(p.nome)}</b>. Seu acesso dura até 24 horas.</p><form method="post" action="/c/${h(p.token)}/sair">${campoAcesso(req,'sair')}<button class="btn sec mini">Sair deste perfil</button></form></section>`;
   if(e.encerrada_em) corpo += `<section class="cartao"><h2>Essa roda virou lembrança!</h2><a class="btn" href="/c/${h(p.token)}/album">Ver álbum da edição</a></section>`;
@@ -134,6 +134,32 @@ r.get('/c/:token', carregar, (req, res) => {
 
   if (sorteada) corpo += cartaoSocial;
 
+  const perfilHTML = `
+    <section class="cartao painel-etapa" id="etapa-perfil" data-etapa="perfil" aria-labelledby="aba-perfil">
+      <span class="etiqueta">Pra reconhecer você</span><h2>Deixe seu perfil com a sua cara.</h2>
+      <div class="foto-linha">
+        ${avatar(p.foto, p.nome)}
+        <div>
+          <p class="muted pequeno" style="margin:0 0 8px">A foto aparece para quem tirar ${responsavel ? h(primeiroNome) : 'você'} na raspadinha.</p>
+          <label class="btn sec mini" style="margin:0">Escolher foto<input type="file" accept="image/*" id="foto-input" data-token="${h(p.token)}" hidden></label>
+          <div id="foto-acesso">${campoAcesso(req, 'foto')}</div><div id="foto-status" class="muted pequeno"></div>
+        </div>
+      </div>
+      <form method="post" action="/c/${h(p.token)}/dados">
+          ${campoAcesso(req, 'dados')}
+        <label for="nome">Nome</label>
+        <input type="text" id="nome" name="nome" value="${h(p.nome)}" required maxlength="80">
+        ${responsavel ? '' : `
+        <div class="grade-2">
+          <div><label for="telefone">WhatsApp</label><input type="tel" id="telefone" name="telefone" value="${h(p.telefone)}" placeholder="(21) 99999-9999"></div>
+          <div><label for="email">E-mail</label><input type="email" id="email" name="email" value="${h(p.email)}"></div>
+        </div>`}
+        <div class="acoes"><button class="btn sec">Salvar dados</button></div>
+      </form>
+    </section>`;
+
+  if(sorteada) corpo += perfilHTML.replace('cartao painel-etapa','cartao').replace('data-etapa="perfil" aria-labelledby="aba-perfil"','');
+
   /* ---------- Antes do sorteio: confirmação, dados, sugestões ---------- */
   if (!sorteada) {
     corpo += `<nav class="etapas" data-abas data-inicial="${p.status === 'confirmado' ? (p.foto ? 'presentes' : 'perfil') : 'participacao'}">
@@ -160,29 +186,7 @@ r.get('/c/:token', carregar, (req, res) => {
           </form>`}
     </section>`;
 
-    corpo += `
-    <section class="cartao painel-etapa" id="etapa-perfil" data-etapa="perfil" aria-labelledby="aba-perfil">
-      <span class="etiqueta">Pra reconhecer você</span><h2>Deixe seu perfil com a sua cara.</h2>
-      <div class="foto-linha">
-        ${avatar(p.foto, p.nome)}
-        <div>
-          <p class="muted pequeno" style="margin:0 0 8px">A foto aparece para quem tirar ${responsavel ? h(primeiroNome) : 'você'} na raspadinha.</p>
-          <label class="btn sec mini" style="margin:0">Escolher foto<input type="file" accept="image/*" id="foto-input" data-token="${h(p.token)}" hidden></label>
-          <div id="foto-acesso">${campoAcesso(req, 'foto')}</div><div id="foto-status" class="muted pequeno"></div>
-        </div>
-      </div>
-      <form method="post" action="/c/${h(p.token)}/dados">
-          ${campoAcesso(req, 'dados')}
-        <label for="nome">Nome</label>
-        <input type="text" id="nome" name="nome" value="${h(p.nome)}" required maxlength="80">
-        ${responsavel ? '' : `
-        <div class="grade-2">
-          <div><label for="telefone">WhatsApp</label><input type="tel" id="telefone" name="telefone" value="${h(p.telefone)}" placeholder="(21) 99999-9999"></div>
-          <div><label for="email">E-mail</label><input type="email" id="email" name="email" value="${h(p.email)}"></div>
-        </div>`}
-        <div class="acoes"><button class="btn sec">Salvar dados</button></div>
-      </form>
-    </section>`;
+    corpo += perfilHTML;
 
     corpo += `
     <section class="cartao painel-etapa" id="etapa-presentes" data-etapa="presentes" aria-labelledby="aba-presentes">
@@ -245,7 +249,7 @@ r.get('/c/:token', carregar, (req, res) => {
   }
   res.send(pagina({
     titulo: e.nome, selo: e.grupo_nome, corpo, experiencia: 'convite',
-    scripts: sorteada ? ['/raspadinha.js'] : ['/convite.js'],
+    scripts: sorteada ? ['/raspadinha.js','/convite.js'] : ['/convite.js'],
   }));
 });
 
@@ -346,6 +350,7 @@ r.post('/c/:token/dados', carregar, protegerAlteracao, (req, res) => {
     db.prepare('UPDATE pessoas SET nome = ? WHERE id = ?').run(nome, p.pessoa_id);
   } else {
     const email = limpar(req.body.email, 120) || null;
+    if(email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) return voltar(res,p.token,'Informe um e-mail válido.',true);
     db.prepare('UPDATE pessoas SET nome = ?, telefone = ?, email = ? WHERE id = ?')
       .run(nome, limpar(req.body.telefone, 30) || null, email, p.pessoa_id);
   }

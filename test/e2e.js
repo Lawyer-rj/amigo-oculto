@@ -38,13 +38,15 @@ async function main() {
 
   // 19 confirmam, 1 recusa (guarda o nome completo de cada link)
   const nomeDe = {};
+  const sessoes = {};
   for (let i = 0; i < tokens.length; i++) {
     const pg = await (await fetch(`${BASE}/c/${tokens[i]}`)).text();
     nomeDe[i] = pg.match(/id="nome" name="nome" value="([^"]+)"/)[1];
     const resposta = i === 19 ? 'recusado' : 'confirmado';
     r = await form(tokens[i], 'confirmar', { resposta, pin: String(1000 + i), pin2: String(1000 + i) });
-    assert.strictEqual(r.status, resposta === 'confirmado' ? 200 : 303);
-    await form(tokens[i], 'sugestoes', { texto0: `Livro ${i}`, link0: 'loja.com.br/livro', cor0: 'azul', tamanho0: 'M', detalhes0: 'capa dura', onde0: 'Livraria do centro', texto1: `Caneca ${i}`, link1: '' });
+    assert.strictEqual(r.status, 303);
+    if(resposta==='confirmado') sessoes[i]=r.headers.get('set-cookie').split(';')[0];
+    await form(tokens[i], 'sugestoes', { texto0: `Livro ${i}`, link0: 'loja.com.br/livro', cor0: 'azul', tamanho0: 'M', detalhes0: 'capa dura', onde0: 'Livraria do centro', texto1: `Caneca ${i}`, link1: '', texto2: `Chocolate ${i}` });
   }
 
   // Foto (PNG mínimo 1x1)
@@ -82,12 +84,12 @@ async function main() {
   // Revela os 19 e reconstrói o ciclo pelos nomes
   const tirou = {};
   for (let i = 0; i < 19; i++) {
-    const pag = await (await fetch(`${BASE}/c/${tokens[i]}`)).text();
+    const pag = await (await fetch(`${BASE}/c/${tokens[i]}`,{headers:{cookie:sessoes[i]}})).text();
     assert.match(pag, /raspadinha/);
     r = await fetch(`${BASE}/c/${tokens[i]}/revelar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: String(1000 + i) }) });
     const j = await r.json();
     assert.ok(j.nome, JSON.stringify(j));
-    assert.ok(j.sugestoes.length === 2);
+    assert.ok(j.sugestoes.length === 3);
     assert.deepStrictEqual([j.sugestoes[0].cor, j.sugestoes[0].tamanho, j.sugestoes[0].detalhes, j.sugestoes[0].onde], ['azul', 'M', 'capa dura', 'Livraria do centro']);
     tirou[i] = j.nome;
   }
@@ -113,7 +115,7 @@ async function main() {
     // o nome aparece na lista de participantes, mas nunca em formato "X → Y"
     assert.ok(!html.includes(`→ ${n}`));
   }
-  console.log('E2E OK: 20 convidados, 19 confirmados, sorteio em ciclo, revelações individuais, sigilo do painel.');
+  console.log('E2E OK: 20 convidados, 19 confirmados, três sugestões, fotos, sorteio em ciclo, revelações individuais, sigilo do painel.');
 }
 
 main().catch((e) => { console.error('E2E FALHOU:', e); process.exit(1); });

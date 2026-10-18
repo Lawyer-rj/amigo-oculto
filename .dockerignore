@@ -5,3 +5,5 @@ data
 *.md
 !THIRD-PARTY-NOTICES.md
 .git
+
+certificados

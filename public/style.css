@@ -28,3 +28,14 @@ label{display:block;font-weight:600;font-size:13px;margin:17px 0 7px}input[type=
 .historico-acoes{display:flex;justify-content:flex-end;margin-top:24px;padding-top:20px;border-top:1px solid var(--linha)}.historico-acoes .btn{min-height:50px;min-width:240px;padding:14px 24px;line-height:1.4}@media(max-width:560px){.historico-acoes .btn{width:100%;min-width:0}}
 
 .social-chat form:has(#texto-social) .btn{margin-top:20px;min-height:50px}.social-chat #social-status{margin-top:18px;line-height:1.6}
+
+.acesso-acoes{display:flex;align-items:center;flex-wrap:wrap;gap:14px;margin-top:24px}.acesso-acoes .btn{min-height:50px}@media(max-width:560px){.acesso-acoes{flex-direction:column;align-items:stretch}.acesso-acoes .btn{width:100%}}
+
+/* Regra comum para ações de formulários com campos: não afeta botões isolados ou barras compactas. */
+form:not(.acoes):has(input:not([type="hidden"]),select,textarea) > :is(.btn,.acoes,.acesso-acoes,.historico-acoes){margin-top:24px}
+.cartao > form + .btn{margin-top:16px}
+@media(max-width:560px){form:not(.acoes):has(input:not([type="hidden"]),select,textarea) > .btn:not(.mini){width:100%}}
+
+input[type=file]:not([hidden]){display:block;width:100%;max-width:100%;min-width:0;font:inherit;font-size:14px;overflow:hidden}
+
+.social-chat > form.acoes{margin-bottom:24px}
